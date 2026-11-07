@@ -1,0 +1,29 @@
+{
+  "file": "index.html",
+  "type": "web",
+  "title": "Pixel Office — AI agents",
+  "description": "Live pixel-art office of your AI coding agents (Pixel Agents Office Plus). Needs the local office server: pixel-agents --port 47100.",
+  "preview": "preview.jpg",
+  "tags": ["Pixel art", "Technology"],
+  "visibility": "private",
+  "general": {
+    "properties": {
+      "showlabels": {
+        "order": 0,
+        "text": "Show agent labels",
+        "type": "bool",
+        "value": true
+      },
+      "zoom": {
+        "order": 1,
+        "text": "Zoom (0 = fit screen)",
+        "type": "slider",
+        "min": 0,
+        "max": 10,
+        "value": 0,
+        "editable": true,
+        "fraction": false
+      }
+    }
+  }
+}

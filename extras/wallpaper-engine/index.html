@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Pixel Office</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #1e1e2e;
+      }
+      #office {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        opacity: 0;
+        transition: opacity 0.8s;
+      }
+      #office.ready {
+        opacity: 1;
+      }
+      #splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        color: #cdd6f4;
+        font: 18px/1.4 Consolas, 'Courier New', monospace;
+        text-align: center;
+        transition: opacity 0.8s;
+      }
+      #splash.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #splash small {
+        color: #7f849c;
+        font-size: 13px;
+      }
+      #bits {
+        color: #a6e3a1;
+        letter-spacing: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="splash">
+      <div>Pixel Office is waking up…</div>
+      <div id="bits">0101 1101</div>
+      <small>Waiting for the office server on 127.0.0.1:47100<br />(it starts automatically at logon; manual start: <b>pixel-agents --port 47100</b>)</small>
+    </div>
+    <iframe id="office" title="Pixel Office"></iframe>
+    <script>
+      // Read-only view of the local Pixel Agents office. No token is used:
+      // an untokened connection can watch the office but never change it.
+      const PORT = 47100;
+      const BASE = 'http://127.0.0.1:' + PORT;
+      const settings = { labels: true, zoom: 0 };
+      const frame = document.getElementById('office');
+      const splash = document.getElementById('splash');
+      const bits = document.getElementById('bits');
+      let loaded = false;
+
+      function officeUrl() {
+        let url = BASE + '/?wallpaper=1';
+        if (!settings.labels) url += '&labels=0';
+        if (settings.zoom > 0) url += '&zoom=' + settings.zoom;
+        return url;
+      }
+
+      function randomBits() {
+        const n = 4 + Math.floor(Math.random() * 5);
+        let s = '';
+        for (let i = 0; i < n; i++) {
+          if (i === 4) s += ' ';
+          s += Math.random() < 0.5 ? '0' : '1';
+        }
+        return s;
+      }
+      setInterval(() => {
+        bits.textContent = randomBits();
+      }, 900);
+
+      async function serverUp() {
+        try {
+          await fetch(BASE + '/api/health', { mode: 'no-cors', cache: 'no-store' });
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      function show() {
+        frame.onload = () => {
+          frame.classList.add('ready');
+          splash.classList.add('hidden');
+        };
+        frame.src = officeUrl();
+        loaded = true;
+      }
+
+      // Wait for the server, then load; while loaded, keep checking and
+      // fall back to the splash (and reload) if the server goes away.
+      async function tick() {
+        const up = await serverUp();
+        if (up && !loaded) show();
+        if (!up && loaded) {
+          loaded = false;
+          frame.classList.remove('ready');
+          splash.classList.remove('hidden');
+          frame.removeAttribute('src');
+        }
+        setTimeout(tick, up ? 10000 : 2000);
+      }
+      tick();
+
+      // Wallpaper Engine user properties (see project.json).
+      window.wallpaperPropertyListener = {
+        applyUserProperties(props) {
+          let changed = false;
+          if (props.showlabels) {
+            settings.labels = !!props.showlabels.value;
+            changed = true;
+          }
+          if (props.zoom) {
+            settings.zoom = Math.max(0, Math.round(Number(props.zoom.value) || 0));
+            changed = true;
+          }
+          if (changed && loaded) frame.src = officeUrl();
+        },
+      };
+    </script>
+  </body>
+</html>

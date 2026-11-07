@@ -63,6 +63,9 @@ interface OfficeCanvasProps {
    *  character fires onClick (opens its terminal). Desktop keeps single-click
    *  focus with tap-again-to-deselect. */
   tapSelectsFirst?: boolean;
+  /** Wallpaper mode: the camera is owned by the caller (no follow, no greeter
+   *  drift) and the canvas ignores all pointer input. */
+  staticView?: boolean;
 }
 
 export function OfficeCanvas({
@@ -83,6 +86,7 @@ export function OfficeCanvas({
   showAreas,
   activeAreaLabel,
   tapSelectsFirst = false,
+  staticView = false,
 }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -163,7 +167,7 @@ export function OfficeCanvas({
           officeState.cameraFollowId !== null
             ? officeState.characters.get(officeState.cameraFollowId)
             : undefined;
-        const cameraFocus = followCh ?? officeState.greeterCameraTarget;
+        const cameraFocus = staticView ? undefined : (followCh ?? officeState.greeterCameraTarget);
         if (cameraFocus) {
           const layout = officeState.getLayout();
           const mapW = layout.cols * TILE_SIZE * zoom;
@@ -239,6 +243,7 @@ export function OfficeCanvas({
     panRef,
     showAreas,
     activeAreaLabel,
+    staticView,
   ]);
 
   // Convert CSS mouse coords to world (sprite pixel) coords
@@ -791,7 +796,7 @@ export function OfficeCanvas({
   // Touch: one-finger pan, two-finger pinch zoom, short tap = click.
   useCanvasTouchGestures({
     canvasRef,
-    enabled: !isEditMode,
+    enabled: !isEditMode && !staticView,
     zoom,
     onZoomChange,
     panRef,
@@ -818,6 +823,7 @@ export function OfficeCanvas({
         onMouseLeave={handleMouseLeave}
         onContextMenu={handleContextMenu}
         className="block touch-none"
+        style={staticView ? { pointerEvents: 'none' } : undefined}
       />
     </div>
   );

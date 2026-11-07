@@ -27,6 +27,7 @@ import { useIntroTour } from './hooks/useIntroTour.js';
 import { useIsMobile } from './hooks/useIsMobile.js';
 import { useKeyboardViewport } from './hooks/useKeyboardViewport.js';
 import { useTerminalDrawer } from './hooks/useTerminalDrawer.js';
+import { useWallpaperCamera } from './hooks/useWallpaperCamera.js';
 import { MobileShell } from './mobile/MobileShell.js';
 import { useMobileShell } from './mobile/useMobileShell.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
@@ -43,6 +44,7 @@ import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
+import { wallpaperParams } from './wallpaper.js';
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
@@ -59,6 +61,14 @@ function getOfficeState(): OfficeState {
   }
   return officeStateRef.current;
 }
+
+function getCurrentLayout(): OfficeLayout {
+  return getOfficeState().getLayout();
+}
+
+// ?wallpaper=1: office-only view for live desktop wallpapers (see wallpaper.ts).
+// Read once — the URL never changes under a running page.
+const wallpaper = wallpaperParams();
 
 function App() {
   // Browser runtime (dev or static dist): dispatch mock messages after the
@@ -138,7 +148,9 @@ function App() {
   // Mobile shell (phones, touch tablets): office and terminal as sliding
   // full-screen pages with the cards in a bottom bar. Desktop keeps the
   // right-docked drawer.
-  const isMobile = useIsMobile();
+  // Wallpaper mode always gets the desktop layout (it renders neither shell's
+  // chrome, but the office must not be squeezed into the mobile track).
+  const isMobile = useIsMobile() && !wallpaper.enabled;
   // Software keyboard: whether it is up (the key bar shows), and the height
   // to clamp the shell to so the terminal shrinks (and the PTY resizes)
   // instead of hiding its input line under the keys (iOS only — Android
@@ -314,6 +326,16 @@ function App() {
   ]);
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Wallpaper mode's fixed camera (fit-to-viewport zoom + centring pan). Inert
+  // without ?wallpaper=1.
+  const wallpaperCamera = useWallpaperCamera(
+    wallpaper.enabled,
+    layoutReady,
+    getCurrentLayout,
+    containerRef,
+    wallpaper.zoom,
+  );
 
   const [editorTickForKeyboard, setEditorTickForKeyboard] = useState(0);
   useEditorKeyboard(
@@ -493,7 +515,58 @@ function App() {
     })();
 
   if (!layoutReady) {
+    if (wallpaper.enabled) return <div className="w-full h-full bg-bg" />;
     return <div className="w-full h-full flex items-center justify-center ">Loading...</div>;
+  }
+
+  // Wallpaper mode: the office and its characters (labels, speech, chatter and
+  // waiting bubbles) and nothing else — no toolbar, zoom controls, card bar,
+  // terminal, modals, tour, toasts or version notice. Pointer input is ignored
+  // and the camera is fixed, so nothing on the page can change state.
+  if (wallpaper.enabled) {
+    return (
+      <div
+        ref={containerRef}
+        className="w-full h-full relative overflow-hidden bg-bg select-none"
+        style={{ pointerEvents: 'none' }}
+      >
+        <OfficeCanvas
+          officeState={officeState}
+          onClick={handleClick}
+          isEditMode={false}
+          editorState={editorState}
+          onEditorTileAction={editor.handleEditorTileAction}
+          onEditorEraseAction={editor.handleEditorEraseAction}
+          onEditorSelectionChange={editor.handleEditorSelectionChange}
+          onDeleteSelected={editor.handleDeleteSelected}
+          onRotateSelected={editor.handleRotateSelected}
+          onDrop={editor.handleDrop}
+          editorTick={editor.editorTick}
+          zoom={wallpaperCamera.zoom}
+          onZoomChange={editor.handleZoomChange}
+          panRef={wallpaperCamera.panRef}
+          showAreas={showAreas}
+          activeAreaLabel={null}
+          staticView
+        />
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: 'var(--vignette)' }}
+        />
+        <ToolOverlay
+          officeState={officeState}
+          agents={agents}
+          agentTools={agentTools}
+          subagentTools={subagentTools}
+          subagentCharacters={subagentCharacters}
+          containerRef={containerRef}
+          zoom={wallpaperCamera.zoom}
+          panRef={wallpaperCamera.panRef}
+          onCloseAgent={handleCloseAgent}
+          alwaysShowOverlay={wallpaper.labels}
+        />
+      </div>
+    );
   }
 
   // The office region is shared by both shells: desktop mounts it as the

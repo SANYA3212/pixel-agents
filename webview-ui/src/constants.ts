@@ -649,3 +649,21 @@ export const MAX_RESIDENT_NAME_LENGTH = 24;
 export const MAX_RESIDENT_ID_LENGTH = 64;
 export const MAX_RESIDENTS = 32;
 export const RESIDENT_NAME_COLOR = '#c8b8ff';
+
+// ── Wallpaper mode (?wallpaper=1: office-only view for live desktop wallpapers) ─
+/** Query parameters read once by wallpaper.ts. */
+export const WALLPAPER_PARAM = 'wallpaper';
+export const WALLPAPER_LABELS_PARAM = 'labels';
+export const WALLPAPER_ZOOM_PARAM = 'zoom';
+/** Empty space kept on each side of the fitted office, as a fraction of the
+ *  viewport's width / height. */
+export const WALLPAPER_FIT_MARGIN_FRACTION = 0.03;
+/** Upper bound for the fitted (or forced) zoom — far above ZOOM_MAX because a
+ *  4K wallpaper with a small office legitimately wants it. */
+export const WALLPAPER_ZOOM_MAX = 32;
+/** Tiles of headroom fitted above the office's top row: wall faces and tall
+ *  furniture are drawn up to one tile above their own tile. */
+export const WALLPAPER_TOP_OVERHANG_TILES = 1;
+/** How often wallpaper mode re-checks the layout's extent (layout reloads and
+ *  edits from other clients arrive without a React re-render). */
+export const WALLPAPER_LAYOUT_POLL_MS = 1000;

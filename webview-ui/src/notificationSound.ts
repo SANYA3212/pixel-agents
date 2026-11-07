@@ -13,6 +13,7 @@ import {
   PERMISSION_VOLUME,
 } from './constants.js';
 import { isE2E } from './runtime.js';
+import { isWallpaperMode } from './wallpaper.js';
 
 let soundEnabled = true;
 let audioCtx: AudioContext | null = null;
@@ -65,7 +66,8 @@ function playNote(
 
 export async function playDoneSound(): Promise<void> {
   recordSoundForTests('done');
-  if (!soundEnabled) return;
+  // Wallpaper mode is a silent ambient view, whatever the saved setting says.
+  if (!soundEnabled || isWallpaperMode()) return;
   try {
     if (!audioCtx) {
       audioCtx = new AudioContext();
@@ -84,7 +86,8 @@ export async function playDoneSound(): Promise<void> {
 
 export async function playPermissionSound(): Promise<void> {
   recordSoundForTests('permission');
-  if (!soundEnabled) return;
+  // Wallpaper mode is a silent ambient view, whatever the saved setting says.
+  if (!soundEnabled || isWallpaperMode()) return;
   try {
     if (!audioCtx) {
       audioCtx = new AudioContext();
