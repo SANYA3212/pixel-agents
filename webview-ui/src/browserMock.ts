@@ -25,9 +25,12 @@ import type {
   CatalogEntry,
   CharacterDirectionSprites,
 } from '../../core/src/assets/types.ts';
+import { PROVIDER_IDS } from './constants.js';
 
 interface MockPayload {
   characters: CharacterDirectionSprites[];
+  /** Per-agent-type skins found under assets/characters/agents/<id>.png. */
+  providerSkins: Record<string, CharacterDirectionSprites>;
   floorSprites: string[][][];
   wallSets: string[][][][];
   carpetSets: string[][][][];
@@ -136,6 +139,42 @@ async function decodeCharactersFromPng(
   return sprites;
 }
 
+function decodeCharacterSheet(png: DecodedPng): CharacterDirectionSprites {
+  const byDir: CharacterDirectionSprites = { down: [], up: [], right: [] };
+  for (let dirIdx = 0; dirIdx < CHARACTER_DIRECTIONS.length; dirIdx++) {
+    const dir = CHARACTER_DIRECTIONS[dirIdx];
+    const frames: string[][][] = [];
+    for (let frame = 0; frame < CHAR_FRAMES_PER_ROW; frame++) {
+      frames.push(
+        readSprite(png, CHAR_FRAME_W, CHAR_FRAME_H, frame * CHAR_FRAME_W, dirIdx * CHAR_FRAME_H),
+      );
+    }
+    byDir[dir] = frames;
+  }
+  return byDir;
+}
+
+/** Optional per-agent-type skins (assets/characters/agents/<providerId>.png).
+ *  Missing files are simply skipped: the office falls back to palettes. */
+async function decodeProviderSkins(
+  base: string,
+): Promise<Record<string, CharacterDirectionSprites>> {
+  const out: Record<string, CharacterDirectionSprites> = {};
+  await Promise.all(
+    PROVIDER_IDS.map(async (id) => {
+      try {
+        const png = await decodePng(`${base}assets/characters/agents/${id}.png`);
+        if (png.width < CHAR_FRAME_W * CHAR_FRAMES_PER_ROW) return;
+        if (png.height < CHAR_FRAME_H * CHARACTER_DIRECTIONS.length) return;
+        out[id] = decodeCharacterSheet(png);
+      } catch {
+        /* no skin for this type */
+      }
+    }),
+  );
+  return out;
+}
+
 async function decodeFloorsFromPng(base: string, index: AssetIndex): Promise<string[][][]> {
   const floors: string[][][] = [];
   for (const relPath of index.floors) {
@@ -229,8 +268,11 @@ export async function initBrowserMock(): Promise<void> {
       ? await fetchJsonOptional<string[][][][]>(`${base}assets/decoded/carpets.json`)
       : null) ?? [];
 
+  const providerSkins = await decodeProviderSkins(base);
+
   mockPayload = {
     characters,
+    providerSkins,
     floorSprites,
     wallSets,
     carpetSets,
@@ -256,6 +298,7 @@ export function dispatchMockMessages(): void {
 
   const {
     characters,
+    providerSkins,
     floorSprites,
     wallSets,
     carpetSets,
@@ -271,7 +314,7 @@ export function dispatchMockMessages(): void {
   // Must match the load order defined in CLAUDE.md:
   // characterSpritesLoaded -> floorTilesLoaded -> wallTilesLoaded -> carpetTilesLoaded
   //   -> furnitureAssetsLoaded -> layoutLoaded
-  dispatch({ type: 'characterSpritesLoaded', characters });
+  dispatch({ type: 'characterSpritesLoaded', characters, providerSkins });
   dispatch({ type: 'floorTilesLoaded', sprites: floorSprites });
   dispatch({ type: 'wallTilesLoaded', sets: wallSets });
   dispatch({ type: 'carpetTilesLoaded', sets: carpetSets });

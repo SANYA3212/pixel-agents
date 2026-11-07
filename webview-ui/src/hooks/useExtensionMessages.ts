@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { HooksConsentRequest } from '../../../core/src/messages.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
-import { reconcileExistingAgents } from '../office/engine/existingAgents.js';
+import { addAgentOptionsOf, reconcileExistingAgents } from '../office/engine/existingAgents.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import { setGhostHeadlessAgents as setRendererGhostHeadlessAgents } from '../office/engine/renderer.js';
 import { setFloorSprites } from '../office/floorTiles.js';
@@ -11,7 +11,7 @@ import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js';
 import { migrateLayoutColors } from '../office/layout/layoutSerializer.js';
 import { setCarpetSprites } from '../office/sprites/carpetTiles.js';
 import { setPetTemplates } from '../office/sprites/petSpriteData.js';
-import { setCharacterTemplates } from '../office/sprites/spriteData.js';
+import { setCharacterTemplates, setProviderSkins } from '../office/sprites/spriteData.js';
 import {
   extractToolName,
   isSubagentToolName,
@@ -322,7 +322,8 @@ export function useExtensionMessages(
         const rawLayout = msg.layout as OfficeLayout | null;
         const layout = rawLayout && rawLayout.version === 1 ? migrateLayoutColors(rawLayout) : null;
         if (layout) {
-          os.rebuildFromLayout(layout);
+          // A host-loaded layout carries the Residents roster: adopt it.
+          os.rebuildFromLayout(layout, undefined, { adoptResidents: true });
           onLayoutLoaded?.(layout);
         } else {
           // Default layout — snapshot whatever OfficeState built
@@ -330,7 +331,16 @@ export function useExtensionMessages(
         }
         // Add buffered agents now that layout (and seats) are correct
         for (const p of pendingAgents) {
-          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.directoryName);
+          os.addAgent(
+            p.id,
+            p.palette,
+            p.hueShift,
+            p.seatId,
+            true,
+            p.directoryName,
+            undefined,
+            addAgentOptionsOf(p),
+          );
           if (p.isHeadless) os.setHeadless(p.id, true);
         }
         pendingAgents = [];
@@ -349,6 +359,8 @@ export function useExtensionMessages(
         const teammateName = msg.teammateName as string | undefined;
         const teammateParentId = msg.parentAgentId as number | undefined;
         const teamName = msg.teamName as string | undefined;
+        const providerId = msg.providerId as string | undefined;
+        const agentLabel = msg.agentLabel as string | undefined;
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]));
         // Don't auto-select teammates (keep focus on lead)
         if (!isTeammate) {
@@ -369,6 +381,8 @@ export function useExtensionMessages(
             undefined,
             parentCh?.directoryName,
             teammateParentId,
+            // A teammate runs on its lead's agent type unless told otherwise.
+            { providerId: providerId ?? parentCh?.providerId, agentLabel },
           );
           noteDirectoryName(parentCh?.directoryName);
           // Set team metadata on the character
@@ -381,7 +395,10 @@ export function useExtensionMessages(
         } else {
           const palette = msg.palette as number | undefined;
           const hueShift = msg.hueShift as number | undefined;
-          os.addAgent(id, palette, hueShift, undefined, undefined, directoryName);
+          os.addAgent(id, palette, hueShift, undefined, undefined, directoryName, undefined, {
+            providerId,
+            agentLabel,
+          });
           noteDirectoryName(directoryName);
           if (isHeadlessAgent(msg.isExternal as boolean | undefined)) {
             os.setHeadless(id, true);
@@ -694,6 +711,14 @@ export function useExtensionMessages(
         }>;
         console.log(`[Webview] Received ${characters.length} pre-colored character sprites`);
         setCharacterTemplates(characters);
+        // Per-agent-type skins (optional; older hosts don't send them).
+        const providerSkins = msg.providerSkins as Record<string, unknown> | undefined;
+        setProviderSkins(providerSkins);
+        if (providerSkins) {
+          console.log(
+            `[Webview] Received agent-type skins: ${Object.keys(providerSkins).join(', ') || 'none'}`,
+          );
+        }
       } else if (msg.type === 'petSpritesLoaded') {
         const pets = msg.pets;
         if (!Array.isArray(pets)) {

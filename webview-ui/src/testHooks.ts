@@ -15,6 +15,20 @@ declare global {
         waitingAwaitingInput?: boolean;
         isHeadless?: boolean;
         isGreeter?: boolean;
+        providerId?: string;
+        residentId?: string;
+        state?: string;
+        isActive?: boolean;
+        seatId?: string | null;
+        chat?: string | null;
+      }>;
+      /** Residents roster (id, type, name, current character id, bound agent). */
+      getResidents?: () => Array<{
+        id: string;
+        providerId: string;
+        name?: string;
+        characterId: number;
+        boundAgentId: number | null;
       }>;
       /** The character the camera follows (null = free camera). */
       getCameraFollowId?: () => number | null;
@@ -152,8 +166,16 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       waitingAwaitingInput: ch.waitingAwaitingInput,
       isHeadless: ch.isHeadless,
       isGreeter: ch.isGreeter,
+      providerId: ch.providerId,
+      residentId: ch.residentId,
+      state: ch.state,
+      isActive: ch.isActive,
+      seatId: ch.seatId,
+      chat: ch.chat?.text ?? null,
     }));
   };
+
+  hooks.getResidents = () => officeStateRef.current?.getResidents() ?? [];
 
   // The ghost setting lives in the renderer module (read every rAF frame), not
   // in OfficeState, so e2e reads it from there to assert what is actually drawn.
@@ -295,7 +317,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
     const os = officeStateRef.current;
     if (!os) return [];
     return Array.from(os.characters.values())
-      .filter((ch) => !ch.isSubagent)
+      .filter((ch) => !ch.isSubagent && !os.isUnboundResident(ch.id))
       .map((ch) => ({
         id: ch.id,
         seatId: ch.seatId,
@@ -325,6 +347,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
     skipSpawnEffect,
     directoryName,
     nearAgentId,
+    opts,
   ) {
     origAddAgent.call(
       this,
@@ -335,6 +358,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       skipSpawnEffect,
       directoryName,
       nearAgentId,
+      opts,
     );
     const ch = this.characters.get(id);
     hooks.addAgentLog?.push({

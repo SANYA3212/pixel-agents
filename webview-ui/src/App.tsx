@@ -332,12 +332,45 @@ function App() {
     transport.send({ type: 'closeAgent', id });
   }, []);
 
+  // Residents live in the layout (layout.residents), so a roster change is
+  // persisted with the same saveLayout message the editor uses. OfficeState
+  // keeps the roster out of layout undo, so this never dirties the editor.
+  const persistResidents = useCallback(() => {
+    transport.send({
+      type: 'saveLayout',
+      layout: getOfficeState().getLayout() as unknown as Record<string, unknown>,
+    });
+  }, []);
+
+  const handleAddResident = useCallback(
+    (providerId: string, name: string) => {
+      const os = getOfficeState();
+      const id = os.addResident(providerId, name);
+      if (id === null) return;
+      persistResidents();
+      // Show the newcomer: select it and let the camera follow it in.
+      const info = os.getResidents().find((r) => r.id === id);
+      if (info) os.selectAndFollow(info.characterId);
+    },
+    [persistResidents],
+  );
+
+  const handleRemoveResident = useCallback(
+    (residentId: string) => {
+      getOfficeState().removeResident(residentId);
+      persistResidents();
+    },
+    [persistResidents],
+  );
+
   const { reveal: revealTerminal } = terminalDrawer;
   const { showTerminal: showMobileTerminal } = mobileShell;
   const handleClick = useCallback(
     (agentId: number) => {
       // If clicked agent is a sub-agent, focus the parent's terminal instead
       const os = getOfficeState();
+      // A Resident hosting no agent has no terminal: clicking only selects it.
+      if (os.isUnboundResident(agentId)) return;
       const focusId = os.terminalOwnerOf(agentId);
       transport.send({ type: 'focusAgent', id: focusId });
       // Standalone: focusAgent is a no-op server-side (there's no editor to
@@ -578,6 +611,7 @@ function App() {
             zoom={editor.zoom}
             panRef={editor.panRef}
             onCloseAgent={handleCloseAgent}
+            onRemoveResident={officeReadOnly ? undefined : handleRemoveResident}
             alwaysShowOverlay={alwaysShowOverlay}
           />
         </>
@@ -641,6 +675,7 @@ function App() {
           onEditDirectory={directoryEditor.edit}
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
+          onAddResident={handleAddResident}
         />
       )}
 

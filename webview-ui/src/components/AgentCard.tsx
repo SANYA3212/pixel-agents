@@ -6,6 +6,11 @@ import { Button } from './ui/Button.js';
 export interface AgentAppearance {
   palette: number;
   hueShift: number;
+  /** Agent type; its own skin wins over the palette when loaded. */
+  providerId?: string;
+  skinHue?: number;
+  /** Display label (e.g. "Codex · my-project"); the card's tooltip. */
+  label?: string;
 }
 
 /** Agent activity reflected by the tab's status dot. */
@@ -56,9 +61,14 @@ export function AgentCard({
     <div
       className={`pointer-events-auto flex items-stretch gap-1 p-1 cursor-pointer border-2 shrink-0 ${CARD_VARIANT[variant]}`}
       onClick={() => onSelect(agentId)}
-      title={`Agent ${agentId}`}
+      title={appearance.label ?? `Agent ${agentId}`}
     >
-      <CharacterMugShot palette={appearance.palette} hueShift={appearance.hueShift} />
+      <CharacterMugShot
+        palette={appearance.palette}
+        hueShift={appearance.hueShift}
+        providerId={appearance.providerId}
+        skinHue={appearance.skinHue}
+      />
       {/* Close on top, status dot at the bottom, both centred over the
           same column beside the mug shot. */}
       <div className="flex flex-col items-center justify-between shrink-0">

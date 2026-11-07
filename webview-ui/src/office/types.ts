@@ -165,6 +165,28 @@ export interface OfficeLayout {
   areas?: AreaDefinition[];
   /** Per-tile Area label, parallel to tiles array. null = no area assignment. */
   areaTiles?: Array<string | null>;
+  /** Residents added in the browser (they roam the office and become the body
+   *  of a matching agent while it runs). Optional for backward-compat. */
+  residents?: PlacedResident[];
+}
+
+/** Persisted Resident record (lives on OfficeLayout). */
+export interface PlacedResident {
+  /** crypto.randomUUID() generated when the resident is added. */
+  id: string;
+  /** Agent type ('claude', 'codex', …): picks the skin and which agents it can host. */
+  providerId: string;
+  /** Optional display name chosen in the picker. */
+  name?: string;
+}
+
+/** A chatter speech bubble ("0101 1101") currently showing over a character. */
+export interface ChatBubble {
+  text: string;
+  /** Seconds left on screen. */
+  timer: number;
+  /** Total seconds it was shown for (fade math). */
+  duration: number;
 }
 
 export interface Character {
@@ -254,6 +276,29 @@ export interface Character {
   contextTokens: number;
   /** Window `contextTokens` is measured against. */
   maxContextTokens: number;
+
+  // -- Agent type (provider) --
+  /** Agent type ('claude', 'codex', …). Picks the per-type skin when one is
+   *  loaded; sub-agents and teammates inherit their parent's. */
+  providerId?: string;
+  /** Display label for non-Claude agents (e.g. "Codex · my-project"). */
+  agentLabel?: string;
+  /** Hue shift applied to the per-type skin (0 for the first character of a
+   *  type, distinct steps for the next ones). Independent of `hueShift`, which
+   *  belongs to the palette fallback. */
+  skinHue?: number;
+
+  // -- Residents --
+  /** Set when this character is a Resident's body (bound to an agent or not). */
+  residentId?: string;
+  /** The Resident's display name, if it was given one. */
+  residentName?: string;
+
+  // -- Binary chatter --
+  /** Chatter bubble showing right now, or null/undefined. */
+  chat?: ChatBubble | null;
+  /** Seconds before this character may chatter again. */
+  chatCooldown?: number;
 }
 
 export const PetState = { IDLE: 'idle', WALK: 'walk', FOLLOW: 'follow' } as const;

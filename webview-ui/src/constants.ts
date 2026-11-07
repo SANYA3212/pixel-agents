@@ -560,3 +560,92 @@ export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
  *  (with an editable focused) = the software keyboard is up. Well above an
  *  address bar collapsing (~56 px), well below any on-screen keyboard. */
 export const KEYBOARD_MIN_HEIGHT_PX = 150;
+
+// ── Agent types (providers) + per-type skins ─────────────────
+/** Every agent type the office knows how to tell apart. A message without a
+ *  providerId is a Claude agent. Order = the Resident picker's order. */
+export const PROVIDER_IDS = [
+  'claude',
+  'codex',
+  'opencode',
+  'kimi',
+  'gemini',
+  'qwen',
+  'copilot',
+  'cursor',
+] as const;
+export const DEFAULT_PROVIDER_ID = 'claude';
+export const PROVIDER_LABELS: Record<string, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  opencode: 'OpenCode',
+  kimi: 'Kimi',
+  gemini: 'Gemini',
+  qwen: 'Qwen',
+  copilot: 'Copilot',
+  cursor: 'Cursor',
+};
+/** Hue shifts handed out to the 1st, 2nd, 3rd… visible character of the SAME
+ *  agent type so they stay distinguishable (the first keeps the skin as-is).
+ *  Past the end of the list a random shift in [SKIN_HUE_RANDOM_MIN, MAX] is used. */
+export const SKIN_HUE_STEPS = [0, 60, 180, 300, 120, 240, 30, 210];
+export const SKIN_HUE_RANDOM_MIN = 15;
+export const SKIN_HUE_RANDOM_MAX = 345;
+
+// ── Free roaming (idle agents + residents) ───────────────────
+/** Pause between roaming walks while idle. */
+export const ROAM_PAUSE_MIN_SEC = 1.5;
+export const ROAM_PAUSE_MAX_SEC = 7.0;
+/** Chance a roaming walk heads for another idle character (to stop and chat). */
+export const ROAM_SOCIAL_CHANCE = 0.35;
+/** A plain roaming walk prefers destinations at least this many tiles away. */
+export const ROAM_MIN_DISTANCE_TILES = 3;
+/** Destination candidates sampled per walk (cheap; the best-scoring one wins). */
+export const ROAM_TARGET_SAMPLES = 8;
+/** A social walk ends this many tiles (Manhattan) from the other character. */
+export const ROAM_SOCIAL_MAX_DISTANCE_TILES = 2;
+/** After a turn ends, the agent stays seated this long before standing up. */
+export const STAND_UP_DELAY_MIN_SEC = 1.5;
+export const STAND_UP_DELAY_MAX_SEC = 3.0;
+
+// ── Binary chatter (speech bubbles of 0s and 1s while roaming) ─
+export const CHATTER_BITS_MIN = 4;
+export const CHATTER_BITS_MAX = 8;
+/** Bits are grouped in nibbles: "0101 1101". */
+export const CHATTER_GROUP_SIZE = 4;
+export const CHATTER_BUBBLE_MIN_SEC = 1.5;
+export const CHATTER_BUBBLE_MAX_SEC = 2.5;
+/** Solo chatter: expected bubbles per second for a lone roaming character. */
+export const CHATTER_SOLO_RATE_PER_SEC = 0.04;
+/** Conversation start: chance per second for an eligible nearby pair. */
+export const CHATTER_CONVERSATION_RATE_PER_SEC = 0.6;
+/** Two characters within this Manhattan tile distance can converse. */
+export const CHATTER_CONVERSATION_RANGE_TILES = 2;
+/** Bubbles exchanged per conversation (both speakers together). */
+export const CHATTER_CONVERSATION_TURNS_MIN = 2;
+export const CHATTER_CONVERSATION_TURNS_MAX = 5;
+/** Silence between two speakers' bubbles in a conversation. */
+export const CHATTER_TURN_GAP_SEC = 0.25;
+/** Quiet time after a bubble (solo) or a conversation (both partners). */
+export const CHATTER_COOLDOWN_MIN_SEC = 6.0;
+export const CHATTER_COOLDOWN_MAX_SEC = 14.0;
+/** Fade-out at the end of each chatter bubble. */
+export const CHATTER_FADE_SEC = 0.3;
+/** Below the status labels (41/42) and the waiting/permission bubbles (43). */
+export const CHATTER_BUBBLE_Z_INDEX = 40;
+/** World px above the character's anchor where the chatter bubble's bottom sits. */
+export const CHATTER_BUBBLE_RISE_WORLD = 26;
+/** Extra lift (CSS px) while the character's status label panel is showing. */
+export const CHATTER_LABEL_CLEARANCE_PX = 40;
+export const CHATTER_BUBBLE_BG = '#f4f4f8';
+export const CHATTER_BUBBLE_TEXT = '#1e1e2e';
+export const CHATTER_BUBBLE_BORDER = '#1e1e2e';
+
+// ── Residents (characters added in the browser, persisted in the layout) ─
+/** Residents' character ids count down from here when not bound to an agent:
+ *  far from agent ids (positive), sub-agent ids (-1 down) and GREETER_ID. */
+export const RESIDENT_ID_BASE = -500_000_000;
+export const MAX_RESIDENT_NAME_LENGTH = 24;
+export const MAX_RESIDENT_ID_LENGTH = 64;
+export const MAX_RESIDENTS = 32;
+export const RESIDENT_NAME_COLOR = '#c8b8ff';

@@ -7,14 +7,18 @@ import {
   WALK_SPEED_PX_PER_SEC,
   WANDER_MOVES_BEFORE_REST_MAX,
   WANDER_MOVES_BEFORE_REST_MIN,
-  WANDER_PAUSE_MAX_SEC,
-  WANDER_PAUSE_MIN_SEC,
 } from '../../constants.js';
 import { findPath } from '../layout/tileMap.js';
 import type { CharacterSprites } from '../sprites/spriteData.js';
 import { isReadingToolName } from '../toolUtils.js';
 import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../types.js';
 import { CharacterState, Direction, TILE_SIZE } from '../types.js';
+import { roamPause } from './roaming.js';
+
+/** Where a roaming character should try to walk next, best first. Supplied by
+ *  OfficeState (it knows the other characters); without one the FSM picks a
+ *  random walkable tile. */
+export type RoamTargetPicker = (ch: Character) => Array<{ col: number; row: number }>;
 
 /** Whether a tool should show the reading animation (vs typing). Taxonomy comes
  *  from the active HookProvider via the `providerCapabilities` message. */
@@ -96,6 +100,7 @@ export function updateCharacter(
   seats: Map<string, Seat>,
   tileMap: TileTypeVal[][],
   blockedTiles: Set<string>,
+  pickRoamTarget?: RoamTargetPicker,
 ): void {
   ch.frameTimer += dt;
 
@@ -115,9 +120,9 @@ export function updateCharacter(
         ch.state = CharacterState.IDLE;
         ch.frame = 0;
         ch.frameTimer = 0;
-        ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
+        // Stood up from the desk: head off roaming shortly.
+        ch.wanderTimer = randomRange(0.2, 1.0);
         ch.wanderCount = 0;
-        ch.wanderLimit = randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX);
       }
       break;
     }
@@ -161,33 +166,17 @@ export function updateCharacter(
         }
         break;
       }
-      // Countdown wander timer
+      // Free roaming: no task → wander the office indefinitely (random
+      // destinations, natural pauses, now and then up to another idle
+      // character). The seat is only for work — `isActive` sends us back.
       ch.wanderTimer -= dt;
       if (ch.wanderTimer <= 0) {
-        // Check if we've wandered enough — return to seat for a rest
-        if (ch.wanderCount >= ch.wanderLimit && ch.seatId) {
-          const seat = seats.get(ch.seatId);
-          if (seat) {
-            const path = findPath(
-              ch.tileCol,
-              ch.tileRow,
-              seat.seatCol,
-              seat.seatRow,
-              tileMap,
-              blockedTiles,
-            );
-            if (path.length > 0) {
-              ch.path = path;
-              ch.moveProgress = 0;
-              ch.state = CharacterState.WALK;
-              ch.frame = 0;
-              ch.frameTimer = 0;
-              break;
-            }
-          }
-        }
-        if (walkableTiles.length > 0) {
-          const target = walkableTiles[Math.floor(Math.random() * walkableTiles.length)];
+        const candidates = pickRoamTarget
+          ? pickRoamTarget(ch)
+          : walkableTiles.length > 0
+            ? [walkableTiles[Math.floor(Math.random() * walkableTiles.length)]]
+            : [];
+        for (const target of candidates) {
           const path = findPath(
             ch.tileCol,
             ch.tileRow,
@@ -203,9 +192,10 @@ export function updateCharacter(
             ch.frame = 0;
             ch.frameTimer = 0;
             ch.wanderCount++;
+            break;
           }
         }
-        ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
+        ch.wanderTimer = roamPause();
       }
       break;
     }
@@ -261,7 +251,7 @@ export function updateCharacter(
             }
           }
           ch.state = CharacterState.IDLE;
-          ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
+          ch.wanderTimer = roamPause();
         }
         ch.frame = 0;
         ch.frameTimer = 0;

@@ -16,6 +16,16 @@ export interface ExistingAgentMeta {
   palette?: number;
   hueShift?: number;
   seatId?: string;
+  /** Agent type; absent = Claude. */
+  providerId?: string;
+  /** Display label for non-Claude agents. */
+  agentLabel?: string;
+}
+
+/** Agent-type details addAgent takes beyond seat and palette. */
+export interface AddAgentOptions {
+  providerId?: string;
+  agentLabel?: string;
 }
 
 /** An agent buffered until the layout (and its seats) has been built. */
@@ -26,6 +36,19 @@ export interface PendingAgent {
   seatId?: string;
   directoryName?: string;
   isHeadless?: boolean;
+  providerId?: string;
+  agentLabel?: string;
+}
+
+/** The addAgent options a buffered/restored agent carries (keys only when set). */
+export function addAgentOptionsOf(p: {
+  providerId?: string;
+  agentLabel?: string;
+}): AddAgentOptions {
+  const opts: AddAgentOptions = {};
+  if (p.providerId !== undefined) opts.providerId = p.providerId;
+  if (p.agentLabel !== undefined) opts.agentLabel = p.agentLabel;
+  return opts;
 }
 
 /** Minimal structural view of OfficeState this reconciler needs. */
@@ -38,6 +61,8 @@ export interface ExistingAgentsOffice {
     preferredSeatId?: string,
     skipSpawnEffect?: boolean,
     directoryName?: string,
+    nearAgentId?: number,
+    opts?: AddAgentOptions,
   ) => void;
   setHeadless: (id: number, headless: boolean) => void;
 }
@@ -69,9 +94,20 @@ export function reconcileExistingAgents(
       directoryName: directoryNames[id],
       isHeadless: headlessAgents[id] === true,
     };
+    if (m?.providerId !== undefined) p.providerId = m.providerId;
+    if (m?.agentLabel !== undefined) p.agentLabel = m.agentLabel;
     if (layoutReady) {
       if (!os.characters.has(p.id)) {
-        os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.directoryName);
+        os.addAgent(
+          p.id,
+          p.palette,
+          p.hueShift,
+          p.seatId,
+          true,
+          p.directoryName,
+          undefined,
+          addAgentOptionsOf(p),
+        );
         if (p.isHeadless) os.setHeadless(p.id, true);
         addedDirectly = true;
       }

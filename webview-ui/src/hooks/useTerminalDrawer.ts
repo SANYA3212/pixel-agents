@@ -9,6 +9,7 @@ import {
   TERMINAL_SIDEBAR_WIDTH_PX,
 } from '../constants.js';
 import type { OfficeState } from '../office/engine/officeState.js';
+import { characterDisplayLabel } from '../office/engine/residents.js';
 import type { ToolActivity } from '../office/types.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
 
@@ -166,11 +167,18 @@ export function useTerminalDrawer({
   );
 
   // A terminal tab shows the agent's character (front-facing mug shot), so it
-  // reads the same palette/hueShift the office assigned that character.
+  // reads the same look (skin or palette) the office assigned that character.
   const getAppearance = useCallback(
     (id: number): AgentAppearance => {
       const ch = getOfficeState().characters.get(id);
-      return ch ? { palette: ch.palette, hueShift: ch.hueShift } : DEFAULT_APPEARANCE;
+      if (!ch) return DEFAULT_APPEARANCE;
+      return {
+        palette: ch.palette,
+        hueShift: ch.hueShift,
+        providerId: ch.providerId,
+        skinHue: ch.skinHue,
+        label: characterDisplayLabel(ch),
+      };
     },
     [getOfficeState],
   );

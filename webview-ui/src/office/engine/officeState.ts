@@ -5,6 +5,8 @@ import {
   CHARACTER_HIT_HALF_WIDTH,
   CHARACTER_HIT_HEIGHT,
   CHARACTER_SITTING_OFFSET_PX,
+  DEFAULT_MAX_CONTEXT_TOKENS,
+  DEFAULT_PROVIDER_ID,
   DISMISS_BUBBLE_FAST_FADE_SEC,
   FURNITURE_ANIM_INTERVAL_SEC,
   GREETER_ID,
@@ -12,8 +14,10 @@ import {
   INACTIVE_SEAT_TIMER_MIN_SEC,
   INACTIVE_SEAT_TIMER_RANGE_SEC,
   MAX_PET_ID_LENGTH,
+  MAX_RESIDENTS,
   PET_HIT_HALF_WIDTH,
   PET_HIT_HEIGHT,
+  RESIDENT_ID_BASE,
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
@@ -34,14 +38,50 @@ import type {
   Pet,
   PlacedFurniture,
   PlacedPet,
+  PlacedResident,
   Seat,
   TileType as TileTypeVal,
 } from '../types.js';
 import { CharacterState, Direction, PetState, TILE_SIZE } from '../types.js';
+import type { RoamTargetPicker } from './characters.js';
 import { createCharacter, updateCharacter } from './characters.js';
+import { ChatterSystem } from './chatter.js';
+import type { AddAgentOptions } from './existingAgents.js';
 import { advanceMatrixEffect, startMatrixEffect } from './matrixEffectState.js';
 import { createPet, updatePet } from './petEntity.js';
+import {
+  chooseResidentForAgent,
+  fallbackPaletteFor,
+  newResidentId,
+  normalizeProviderId,
+  pickSkinHue,
+  sanitizeResidentName,
+  sanitizeResidents,
+} from './residents.js';
+import { occupiedTiles, pickRoamTargets, standUpDelay } from './roaming.js';
 import { anchorTile, closestFreeSeat } from './seatPlacement.js';
+
+/** Live state of one Resident. Its character lives in `characters`: under
+ *  `homeId` while free, under the agent's id while it hosts that agent. */
+interface ResidentRecord {
+  id: string;
+  providerId: string;
+  name?: string;
+  /** Reserved character id used while the resident is not bound. */
+  homeId: number;
+  /** Agent whose body this resident is, or null when it roams free. */
+  boundAgentId: number | null;
+}
+
+/** A Resident as the UI sees it. */
+export interface ResidentInfo {
+  id: string;
+  providerId: string;
+  name?: string;
+  /** Character id right now (the agent id while bound). */
+  characterId: number;
+  boundAgentId: number | null;
+}
 
 /** Internal helper: facing-tile coords for a seat. Returns null for invalid direction. */
 function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } {
@@ -117,6 +157,22 @@ export class OfficeState {
    *  overlay's per-frame updates stop re-centering. Reset on spawn/despawn. */
   private greeterCameraCancelled = false;
 
+  /** Residents in the order they were added (mirrored into `layout.residents`). */
+  private residentRecords: ResidentRecord[] = [];
+  private nextResidentHomeId = RESIDENT_ID_BASE;
+
+  /** Binary chatter: bubbles + conversations between roaming characters. */
+  readonly chatter = new ChatterSystem();
+
+  /** Roaming target picker handed to the character FSM (reads the live world). */
+  private readonly roamPicker: RoamTargetPicker = (ch) =>
+    pickRoamTargets(
+      ch,
+      this.walkableTiles,
+      this.characters.values(),
+      occupiedTiles(this.characters.values(), ch.id),
+    );
+
   setAreaMappings(mappings: Record<string, string[]>): void {
     this.areaMappings = mappings;
   }
@@ -130,11 +186,20 @@ export class OfficeState {
     this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles);
     // Pets are built last because they need walkableTiles populated for spawn.
     this.rebuildPetsFromLayout(this.layout);
+    this.reconcileResidents(this.layout.residents, true);
   }
 
   /** Rebuild all derived state from a new layout. Reassigns existing characters.
-   *  @param shift Optional pixel shift to apply when grid expands left/up */
-  rebuildFromLayout(layout: OfficeLayout, shift?: { col: number; row: number }): void {
+   *  @param shift Optional pixel shift to apply when grid expands left/up
+   *  @param opts.adoptResidents Take the layout's `residents` roster as the
+   *    truth (a layout loaded from the host). Without it — every editor edit,
+   *    undo/redo, reset or import — the live roster wins and is written into
+   *    the new layout, so layout undo never adds or removes residents. */
+  rebuildFromLayout(
+    layout: OfficeLayout,
+    shift?: { col: number; row: number },
+    opts?: { adoptResidents?: boolean },
+  ): void {
     this.layout = layout;
     this.tileMap = layoutToTileMap(layout);
     this.seats = layoutToSeats(layout.furniture);
@@ -172,20 +237,24 @@ export class OfficeState {
       seat.assigned = false;
     }
 
+    // Only characters sitting at their desk are snapped onto their seat; one
+    // roaming the office keeps its seat assignment but stays where it is.
+    const snapToSeat = (ch: Character, seat: Seat): void => {
+      if (ch.state !== CharacterState.TYPE) return;
+      ch.tileCol = seat.seatCol;
+      ch.tileRow = seat.seatRow;
+      ch.x = seat.seatCol * TILE_SIZE + TILE_SIZE / 2;
+      ch.y = seat.seatRow * TILE_SIZE + TILE_SIZE / 2;
+      ch.dir = seat.facingDir;
+    };
+
     // First pass: try to keep characters at their existing seats
     for (const ch of this.characters.values()) {
       if (ch.seatId && this.seats.has(ch.seatId)) {
         const seat = this.seats.get(ch.seatId)!;
         if (!seat.assigned) {
           seat.assigned = true;
-          // Snap character to seat position
-          ch.tileCol = seat.seatCol;
-          ch.tileRow = seat.seatRow;
-          const cx = seat.seatCol * TILE_SIZE + TILE_SIZE / 2;
-          const cy = seat.seatRow * TILE_SIZE + TILE_SIZE / 2;
-          ch.x = cx;
-          ch.y = cy;
-          ch.dir = seat.facingDir;
+          snapToSeat(ch, seat);
           continue;
         }
       }
@@ -195,27 +264,31 @@ export class OfficeState {
     // Second pass: assign remaining characters to free seats
     for (const ch of this.characters.values()) {
       if (ch.seatId) continue;
+      if (this.isUnboundResident(ch.id)) continue; // free residents roam; they own no seat
       const seatId = this.findFreeSeat(ch.directoryName);
       if (seatId) {
         this.seats.get(seatId)!.assigned = true;
         ch.seatId = seatId;
-        const seat = this.seats.get(seatId)!;
-        ch.tileCol = seat.seatCol;
-        ch.tileRow = seat.seatRow;
-        ch.x = seat.seatCol * TILE_SIZE + TILE_SIZE / 2;
-        ch.y = seat.seatRow * TILE_SIZE + TILE_SIZE / 2;
-        ch.dir = seat.facingDir;
+        snapToSeat(ch, this.seats.get(seatId)!);
       }
     }
 
-    // Relocate any characters that ended up outside bounds or on non-walkable tiles
+    // Characters on their feet: the tile map may have changed under them, so
+    // drop the planned walk, and move anyone left outside the grid or inside
+    // a wall / furniture to a walkable tile.
     for (const ch of this.characters.values()) {
-      if (ch.seatId) continue; // seated characters are fine
+      if (ch.state === CharacterState.TYPE) continue; // seated characters are fine
+      ch.path = [];
+      ch.moveProgress = 0;
+      const ownSeat = ch.seatId ? this.seats.get(ch.seatId) : undefined;
+      const onOwnSeat =
+        !!ownSeat && ownSeat.seatCol === ch.tileCol && ownSeat.seatRow === ch.tileRow;
       if (
         ch.tileCol < 0 ||
         ch.tileCol >= layout.cols ||
         ch.tileRow < 0 ||
-        ch.tileRow >= layout.rows
+        ch.tileRow >= layout.rows ||
+        (!onOwnSeat && !isWalkable(ch.tileCol, ch.tileRow, this.tileMap, this.blockedTiles))
       ) {
         this.relocateCharacterToWalkable(ch);
       }
@@ -248,6 +321,12 @@ export class OfficeState {
 
     // Reconcile pets against the layout roster (handles editor add/remove)
     this.rebuildPetsFromLayout(layout);
+
+    if (opts?.adoptResidents) {
+      this.reconcileResidents(layout.residents, true);
+    } else {
+      this.syncLayoutResidents();
+    }
   }
 
   /** Move a character to a random walkable tile */
@@ -446,8 +525,22 @@ export class OfficeState {
     skipSpawnEffect?: boolean,
     directoryName?: string,
     nearAgentId?: number,
+    opts?: AddAgentOptions,
   ): void {
     if (this.characters.has(id)) return;
+    const providerId = normalizeProviderId(opts?.providerId);
+
+    // A free Resident of this agent type becomes the agent's body: no new
+    // character; the resident walks to a seat and works while the agent does.
+    const resident = chooseResidentForAgent(this.residentRecords, providerId);
+    if (
+      resident &&
+      this.bindResident(resident as ResidentRecord, id, preferredSeatId, directoryName, nearAgentId)
+    ) {
+      const bound = this.characters.get(id);
+      if (bound && opts?.agentLabel) bound.agentLabel = opts.agentLabel;
+      return;
+    }
 
     let palette: number;
     let hueShift: number;
@@ -460,25 +553,9 @@ export class OfficeState {
       hueShift = pick.hueShift;
     }
 
-    // Try preferred seat first, then (for teammates) the seat closest to the
-    // anchor agent, then any free seat. anchorTile resolves to the anchor's SEAT
-    // (stable from creation) rather than its live tile, so a teammate placed while
-    // the lead is still walking to its seat still clusters around the final seat.
     const anchor = nearAgentId !== undefined ? this.characters.get(nearAgentId) : undefined;
     const anchorAt = anchorTile(anchor, this.seats);
-    let seatId: string | null = null;
-    if (preferredSeatId && this.seats.has(preferredSeatId)) {
-      const seat = this.seats.get(preferredSeatId)!;
-      if (!seat.assigned) {
-        seatId = preferredSeatId;
-      }
-    }
-    if (!seatId && anchorAt) {
-      seatId = closestFreeSeat(this.seats, anchorAt.col, anchorAt.row);
-    }
-    if (!seatId) {
-      seatId = this.findFreeSeat(directoryName);
-    }
+    const seatId = this.chooseSeat(preferredSeatId, nearAgentId, directoryName);
 
     let ch: Character;
     if (seatId) {
@@ -504,10 +581,298 @@ export class OfficeState {
     if (directoryName) {
       ch.directoryName = directoryName;
     }
+    ch.providerId = providerId;
+    ch.skinHue = this.pickSkinHueFor(providerId);
+    if (opts?.agentLabel) ch.agentLabel = opts.agentLabel;
     if (!skipSpawnEffect) {
       startMatrixEffect(ch, 'spawn');
     }
     this.characters.set(id, ch);
+  }
+
+  /**
+   * Seat for a new agent: the preferred (restored) seat if still free, then
+   * (for teammates) the seat closest to the anchor agent, then any free seat.
+   * anchorTile resolves to the anchor's SEAT (stable from creation) rather than
+   * its live tile, so a teammate placed while the lead is still walking to its
+   * seat still clusters around the final seat. Does not mark the seat assigned.
+   */
+  private chooseSeat(
+    preferredSeatId: string | undefined,
+    nearAgentId: number | undefined,
+    directoryName: string | undefined,
+  ): string | null {
+    const anchor = nearAgentId !== undefined ? this.characters.get(nearAgentId) : undefined;
+    const anchorAt = anchorTile(anchor, this.seats);
+    let seatId: string | null = null;
+    if (preferredSeatId && this.seats.has(preferredSeatId)) {
+      const seat = this.seats.get(preferredSeatId)!;
+      if (!seat.assigned) {
+        seatId = preferredSeatId;
+      }
+    }
+    if (!seatId && anchorAt) {
+      seatId = closestFreeSeat(this.seats, anchorAt.col, anchorAt.row);
+    }
+    if (!seatId) {
+      seatId = this.findFreeSeat(directoryName);
+    }
+    return seatId;
+  }
+
+  /** Skin hue for a new character of `providerId`: distinct from the hues the
+   *  other top-level characters of that type already wear. */
+  private pickSkinHueFor(providerId: string): number {
+    const used: number[] = [];
+    for (const ch of this.characters.values()) {
+      if (ch.isSubagent || ch.matrixEffect === 'despawn') continue;
+      if ((ch.providerId ?? DEFAULT_PROVIDER_ID) === providerId) used.push(ch.skinHue ?? 0);
+    }
+    return pickSkinHue(used);
+  }
+
+  // ── Residents ─────────────────────────────────────────────────
+  // Characters the user adds in the browser (like pets). A free resident
+  // roams under a reserved id (RESIDENT_ID_BASE down). When an agent of its
+  // type appears, its character is re-keyed under the agent's id, so
+  // everything keyed by agent id (selection, overlay, cards, focus, sub-agents
+  // spawning beside the parent, seat persistence) just works; when the agent
+  // closes, it is re-keyed back and roams again.
+
+  /** Every resident, roster order. */
+  getResidents(): ResidentInfo[] {
+    return this.residentRecords.map((r) => ({
+      id: r.id,
+      providerId: r.providerId,
+      name: r.name,
+      characterId: r.boundAgentId ?? r.homeId,
+      boundAgentId: r.boundAgentId,
+    }));
+  }
+
+  /** Character ids of residents not hosting an agent right now. */
+  getUnboundResidentIds(): number[] {
+    const ids: number[] = [];
+    for (const r of this.residentRecords) {
+      if (r.boundAgentId === null && this.characters.has(r.homeId)) ids.push(r.homeId);
+    }
+    return ids;
+  }
+
+  /** Is `id` a resident's character that hosts no agent (i.e. not an agent)? */
+  isUnboundResident(id: number): boolean {
+    return this.residentRecords.some((r) => r.boundAgentId === null && r.homeId === id);
+  }
+
+  /** Add a resident of `providerId` with an optional name; it materializes on a
+   *  free walkable tile and starts roaming. Returns its id, or null when the
+   *  roster is full or there is no floor to stand on. */
+  addResident(providerId: string, name?: string): string | null {
+    if (this.residentRecords.length >= MAX_RESIDENTS) return null;
+    const placed: PlacedResident = {
+      id: newResidentId(),
+      providerId: normalizeProviderId(providerId),
+    };
+    const cleanName = sanitizeResidentName(name);
+    if (cleanName !== undefined) placed.name = cleanName;
+    if (!this.spawnResident(placed, false)) return null;
+    this.syncLayoutResidents();
+    return placed.id;
+  }
+
+  /** Remove a resident. A free one dematerializes; one hosting an agent stays
+   *  as that agent's own character (it just stops being a resident). */
+  removeResident(residentId: string): void {
+    const rec = this.residentRecords.find((r) => r.id === residentId);
+    if (!rec) return;
+    this.dropResident(rec);
+    this.syncLayoutResidents();
+  }
+
+  private dropResident(rec: ResidentRecord): void {
+    this.residentRecords = this.residentRecords.filter((r) => r !== rec);
+    if (rec.boundAgentId !== null) {
+      const ch = this.characters.get(rec.boundAgentId);
+      if (ch) {
+        delete ch.residentId;
+        delete ch.residentName;
+      }
+      return;
+    }
+    const ch = this.characters.get(rec.homeId);
+    if (!ch) return;
+    if (this.selectedAgentId === rec.homeId) this.selectedAgentId = null;
+    if (this.cameraFollowId === rec.homeId) this.cameraFollowId = null;
+    if (this.hoveredAgentId === rec.homeId) this.hoveredAgentId = null;
+    this.chatter.forget(rec.homeId);
+    ch.chat = null;
+    if (ch.matrixEffect !== 'despawn') startMatrixEffect(ch, 'despawn');
+  }
+
+  /** Create a resident's record and character. False when nowhere to stand. */
+  private spawnResident(placed: PlacedResident, skipSpawnEffect: boolean): boolean {
+    if (this.walkableTiles.length === 0) return false;
+    const occupied = occupiedTiles(this.characters.values());
+    const freeTiles = this.walkableTiles.filter((t) => !occupied.has(`${t.col},${t.row}`));
+    const pool = freeTiles.length > 0 ? freeTiles : this.walkableTiles;
+    const spawn = pool[Math.floor(Math.random() * pool.length)];
+
+    const homeId = this.nextResidentHomeId--;
+    const providerId = normalizeProviderId(placed.providerId);
+    const ch = createCharacter(
+      homeId,
+      fallbackPaletteFor(providerId, getLoadedCharacterCount()),
+      null,
+      null,
+    );
+    ch.skinHue = this.pickSkinHueFor(providerId);
+    // Without a skin the palette sprite stands in; the same hue keeps two of
+    // the same type apart there too.
+    ch.hueShift = ch.skinHue;
+    ch.providerId = providerId;
+    ch.residentId = placed.id;
+    if (placed.name) ch.residentName = placed.name;
+    ch.state = CharacterState.IDLE;
+    ch.isActive = false;
+    ch.dir = Direction.DOWN;
+    ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2;
+    ch.y = spawn.row * TILE_SIZE + TILE_SIZE / 2;
+    ch.tileCol = spawn.col;
+    ch.tileRow = spawn.row;
+    ch.wanderTimer = 0.5 + Math.random();
+    if (!skipSpawnEffect) startMatrixEffect(ch, 'spawn');
+    this.characters.set(homeId, ch);
+    this.residentRecords.push({
+      id: placed.id,
+      providerId,
+      name: placed.name,
+      homeId,
+      boundAgentId: null,
+    });
+    return true;
+  }
+
+  /**
+   * Make `rec`'s character the body of agent `agentId`: re-key it under the
+   * agent id, carry selection/camera over, and give it a seat to work at. It
+   * keeps its place on the floor — `isActive` walks it to the seat. False when
+   * the character is unusable (e.g. dematerializing).
+   */
+  private bindResident(
+    rec: ResidentRecord,
+    agentId: number,
+    preferredSeatId: string | undefined,
+    directoryName: string | undefined,
+    nearAgentId: number | undefined,
+  ): boolean {
+    const ch = this.characters.get(rec.homeId);
+    if (!ch || ch.matrixEffect === 'despawn') return false;
+    this.characters.delete(rec.homeId);
+    this.chatter.forget(rec.homeId);
+    ch.chat = null;
+    ch.id = agentId;
+    rec.boundAgentId = agentId;
+    if (this.selectedAgentId === rec.homeId) this.selectedAgentId = agentId;
+    if (this.cameraFollowId === rec.homeId) this.cameraFollowId = agentId;
+    if (this.hoveredAgentId === rec.homeId) this.hoveredAgentId = agentId;
+
+    const seatId = this.chooseSeat(preferredSeatId, nearAgentId, directoryName);
+    if (seatId) {
+      this.seats.get(seatId)!.assigned = true;
+      ch.seatId = seatId;
+    }
+    if (directoryName) ch.directoryName = directoryName;
+    // A new agent starts at work, as a freshly spawned one sits at its desk.
+    ch.isActive = true;
+    ch.seatTimer = 0;
+    this.characters.set(agentId, ch);
+    return true;
+  }
+
+  /** The agent hosted by this resident closed: the resident stays, frees its
+   *  seat, forgets the agent and goes back to roaming. */
+  private unbindResident(rec: ResidentRecord, ch: Character): void {
+    const agentId = ch.id;
+    if (ch.seatId) {
+      const seat = this.seats.get(ch.seatId);
+      if (seat) seat.assigned = false;
+    }
+    ch.seatId = null;
+    if (this.selectedAgentId === agentId) this.selectedAgentId = null;
+    if (this.cameraFollowId === agentId) this.cameraFollowId = null;
+    if (this.hoveredAgentId === agentId) this.hoveredAgentId = null;
+    this.characters.delete(agentId);
+    this.chatter.forget(agentId);
+    ch.id = rec.homeId;
+    rec.boundAgentId = null;
+
+    // Forget everything that belonged to the agent.
+    ch.isActive = false;
+    ch.currentTool = null;
+    ch.bubbleType = null;
+    ch.bubbleTimer = 0;
+    ch.waitingAwaitingInput = undefined;
+    ch.agentLabel = undefined;
+    ch.directoryName = undefined;
+    ch.isHeadless = undefined;
+    ch.teamName = undefined;
+    ch.agentName = undefined;
+    ch.isTeamLead = undefined;
+    ch.leadAgentId = undefined;
+    ch.teamUsesTmux = undefined;
+    ch.contextTokens = 0;
+    ch.maxContextTokens = DEFAULT_MAX_CONTEXT_TOKENS;
+    ch.chat = null;
+    if (ch.state === CharacterState.TYPE) {
+      ch.seatTimer = standUpDelay();
+    } else {
+      ch.seatTimer = 0;
+      ch.path = [];
+      ch.moveProgress = 0;
+    }
+    this.characters.set(rec.homeId, ch);
+  }
+
+  /**
+   * Make the live roster match `raw` (a layout's `residents`): add missing
+   * residents, drop removed ones, refresh names. Residents already in the
+   * office keep their place and binding.
+   */
+  private reconcileResidents(raw: unknown, skipSpawnEffect: boolean): void {
+    const placed = sanitizeResidents(raw);
+    const wanted = new Set(placed.map((p) => p.id));
+    for (const rec of [...this.residentRecords]) {
+      if (!wanted.has(rec.id)) this.dropResident(rec);
+    }
+    for (const p of placed) {
+      const rec = this.residentRecords.find((r) => r.id === p.id);
+      if (!rec) {
+        this.spawnResident(p, skipSpawnEffect);
+        continue;
+      }
+      rec.name = p.name;
+      const ch = this.characters.get(rec.boundAgentId ?? rec.homeId);
+      if (ch) {
+        if (p.name) ch.residentName = p.name;
+        else delete ch.residentName;
+      }
+    }
+    // Roster order follows the layout.
+    const order = new Map(placed.map((p, i) => [p.id, i]));
+    this.residentRecords.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    this.syncLayoutResidents();
+  }
+
+  /** Write the roster into `layout.residents`. Left absent while the roster is
+   *  empty and the layout never had the field, so layouts of offices that
+   *  never used Residents stay exactly as they were. */
+  private syncLayoutResidents(): void {
+    if (this.residentRecords.length === 0 && this.layout.residents === undefined) return;
+    this.layout.residents = this.residentRecords.map((r) => {
+      const out: PlacedResident = { id: r.id, providerId: r.providerId };
+      if (r.name !== undefined) out.name = r.name;
+      return out;
+    });
   }
 
   // ── Greeter ───────────────────────────────────────────────────
@@ -590,6 +955,13 @@ export class OfficeState {
     const ch = this.characters.get(id);
     if (!ch) return;
     if (ch.matrixEffect === 'despawn') return; // already despawning
+    if (this.isUnboundResident(id)) return; // not an agent — removeResident owns it
+    // A resident hosting this agent stays in the office and roams again.
+    const rec = this.residentRecords.find((r) => r.boundAgentId === id);
+    if (rec) {
+      this.unbindResident(rec, ch);
+      return;
+    }
     // Free seat and clear selection immediately
     if (ch.seatId) {
       const seat = this.seats.get(ch.seatId);
@@ -613,7 +985,7 @@ export class OfficeState {
   /** Reassign an agent from their current seat to a new seat */
   reassignSeat(agentId: number, seatId: string): void {
     const ch = this.characters.get(agentId);
-    if (!ch) return;
+    if (!ch || this.isUnboundResident(agentId)) return; // free residents own no seat
     // Unassign old seat
     if (ch.seatId) {
       const old = this.seats.get(ch.seatId);
@@ -747,6 +1119,9 @@ export class OfficeState {
     ch.tileRow = spawn.row;
     // Face the same direction as the parent agent
     if (parentCh) ch.dir = parentCh.dir;
+    // Same look as the parent: its agent type's skin (and hue) when loaded.
+    if (parentCh?.providerId !== undefined) ch.providerId = parentCh.providerId;
+    if (parentCh?.skinHue !== undefined) ch.skinHue = parentCh.skinHue;
     ch.isSubagent = true;
     ch.parentAgentId = parentAgentId;
     startMatrixEffect(ch, 'spawn');
@@ -827,13 +1202,21 @@ export class OfficeState {
   setAgentActive(id: number, active: boolean): void {
     const ch = this.characters.get(id);
     if (ch) {
+      const wasActive = ch.isActive;
       ch.isActive = active;
-      if (!active) {
-        // Sentinel -1: signals turn just ended, skip next seat rest timer.
-        // Prevents the WALK handler from setting a 2-4 min rest on arrival.
-        ch.seatTimer = -1;
-        ch.path = [];
-        ch.moveProgress = 0;
+      // Only a turn that actually ended changes course: a repeated idle status
+      // must not freeze a character mid-roam or keep re-seating it.
+      if (!active && wasActive) {
+        if (ch.state === CharacterState.TYPE) {
+          // Turn over: stay at the desk a moment, then get up and roam.
+          ch.seatTimer = standUpDelay();
+        } else {
+          // Sentinel -1: signals turn just ended, skip next seat rest timer.
+          // Prevents the WALK handler from setting a 2-4 min rest on arrival.
+          ch.seatTimer = -1;
+          ch.path = [];
+          ch.moveProgress = 0;
+        }
       }
       this.rebuildFurnitureInstances();
     }
@@ -1146,8 +1529,18 @@ export class OfficeState {
       }
 
       // Temporarily unblock own seat so character can pathfind to it
+      // Idle characters roam via the shared picker (a character in a chatter
+      // conversation holds still: the chatter system keeps its wanderTimer up).
       this.withOwnSeatUnblocked(ch, () =>
-        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles),
+        updateCharacter(
+          ch,
+          dt,
+          this.walkableTiles,
+          this.seats,
+          this.tileMap,
+          this.blockedTiles,
+          this.roamPicker,
+        ),
       );
 
       // Tick bubble timer for waiting bubbles
@@ -1162,7 +1555,11 @@ export class OfficeState {
     // Remove characters that finished despawn
     for (const id of toDelete) {
       this.characters.delete(id);
+      this.chatter.forget(id);
     }
+
+    // Binary chatter between roaming characters (bubbles + conversations).
+    this.chatter.update(Array.from(this.characters.values()), dt);
 
     // ── Pet FSM ────────────────────────────────────────────────
     for (const pet of this.pets) {
@@ -1190,6 +1587,7 @@ export class OfficeState {
     const seats: Record<number, { palette: number; hueShift: number; seatId: string | null }> = {};
     for (const ch of this.characters.values()) {
       if (ch.isSubagent) continue;
+      if (this.isUnboundResident(ch.id)) continue; // not an agent
       seats[ch.id] = { palette: ch.palette, hueShift: ch.hueShift, seatId: ch.seatId };
     }
     return seats;

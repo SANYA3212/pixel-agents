@@ -4,6 +4,7 @@ import type { Directory } from '../hooks/useExtensionMessages.js';
 import { isBrowserRuntime } from '../runtime.js';
 import { transport } from '../transport/index.js';
 import { LaunchDrawer } from './LaunchDrawer.js';
+import { ResidentPicker } from './ResidentPicker.js';
 import { Button } from './ui/Button.js';
 
 interface BottomToolbarProps {
@@ -20,6 +21,8 @@ interface BottomToolbarProps {
   terminalAvailable: boolean;
   /** Why the terminal is off (shown on the disabled button's tooltip). */
   terminalUnavailableReason: string | null;
+  /** Add a Resident (a roaming character that hosts the next agent of its type). */
+  onAddResident?: (providerId: string, name: string) => void;
 }
 
 export function BottomToolbar({
@@ -32,9 +35,24 @@ export function BottomToolbar({
   onEditDirectory,
   terminalAvailable,
   terminalUnavailableReason,
+  onAddResident,
 }: BottomToolbarProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const launchRef = useRef<HTMLDivElement>(null);
+  const [isResidentPickerOpen, setIsResidentPickerOpen] = useState(false);
+  const residentRef = useRef<HTMLDivElement>(null);
+
+  // Same outside-press convention for the resident picker.
+  useEffect(() => {
+    if (!isResidentPickerOpen) return;
+    const handlePress = (e: PointerEvent) => {
+      if (residentRef.current && !residentRef.current.contains(e.target as Node)) {
+        setIsResidentPickerOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePress);
+    return () => document.removeEventListener('pointerdown', handlePress);
+  }, [isResidentPickerOpen]);
 
   // Close the launch drawer on outside press (the dropdown convention here).
   useEffect(() => {
@@ -107,6 +125,24 @@ export function BottomToolbar({
             onEditDirectory={(directory) => {
               setIsDrawerOpen(false);
               onEditDirectory(directory);
+            }}
+          />
+        </div>
+      )}
+      {onAddResident && (
+        <div ref={residentRef} className="relative">
+          <Button
+            variant={isResidentPickerOpen ? 'active' : 'default'}
+            onClick={() => setIsResidentPickerOpen((v) => !v)}
+            title="Add a resident: it roams the office and works for the next agent of its type"
+          >
+            + Resident
+          </Button>
+          <ResidentPicker
+            isOpen={isResidentPickerOpen}
+            onAdd={(providerId, name) => {
+              setIsResidentPickerOpen(false);
+              onAddResident(providerId, name);
             }}
           />
         </div>
