@@ -33,8 +33,22 @@ describe('FileStateAdapter', () => {
   it('returns defaults when config file does not exist', () => {
     const adapter = new FileStateAdapter({ namespace: 'standalone' });
     expect(adapter.getSetting('pixel-agents.soundEnabled', false)).toBe(true);
-    expect(adapter.getSetting('pixel-agents.watchAllSessions', true)).toBe(false);
+    // Standalone watches every session by default (non-Claude agents run
+    // wherever their user started them); VS Code stays scoped to the workspace.
+    expect(adapter.getSetting('pixel-agents.watchAllSessions', false)).toBe(true);
+    expect(
+      new FileStateAdapter({ namespace: 'vscode' }).getSetting(
+        'pixel-agents.watchAllSessions',
+        true,
+      ),
+    ).toBe(false);
     expect(adapter.getSetting('pixel-agents.lastSeenVersion', 'x')).toBe('');
+  });
+
+  it('keeps an explicit standalone watchAllSessions=false', () => {
+    const adapter = new FileStateAdapter({ namespace: 'standalone' });
+    adapter.setSetting('pixel-agents.watchAllSessions', false);
+    expect(adapter.getSetting('pixel-agents.watchAllSessions', true)).toBe(false);
   });
 
   it('round-trips each namespaced setting key (hooksEnabled moved to the per-provider map)', () => {

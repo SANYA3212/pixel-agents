@@ -54,6 +54,9 @@ function runMockClaude(
       env: {
         ...process.env,
         HOME: tmpHome,
+        // Windows: os.homedir() reads USERPROFILE, not HOME. Without this the
+        // child ran against the developer's real ~/.claude.
+        USERPROFILE: tmpHome,
       },
       stdio: ['ignore', 'ignore', 'pipe'],
     });

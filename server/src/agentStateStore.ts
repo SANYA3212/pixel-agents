@@ -156,6 +156,10 @@ export class AgentStateStore {
       // them from sidecars after a restore. Persisting them would resurrect
       // immortal characters whose completion signal never comes.
       if (agent.spawnToolUseId) continue;
+      // Provider-watched agents (Codex, OpenCode, ...) are re-derived from the
+      // provider's own session store on every start; persisting them would
+      // restore them as Claude transcripts.
+      if (agent.providerWatched) continue;
       persisted.push({
         id: agent.id,
         sessionId: agent.sessionId,

@@ -73,6 +73,10 @@ export function resendAgentActivity(
         id,
         status: 'waiting',
       });
+    } else if (agent.providerWatched) {
+      // A watched agent mid-turn with no tool running (thinking, streaming)
+      // has no tool message above to mark it active.
+      send({ type: 'agentStatus', id, status: 'active' });
     }
 
     // 5. Context usage

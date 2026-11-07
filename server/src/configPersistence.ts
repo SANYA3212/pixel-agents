@@ -86,6 +86,14 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   showHostDirectories: false,
 };
 
+/** Standalone watches every session by default: the browser office has no
+ *  workspace of its own to scope to, and non-Claude agents (Codex, OpenCode,
+ *  ...) run wherever their user started them. An explicit choice is kept. */
+const STANDALONE_DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
+  ...DEFAULT_ADAPTER_SETTINGS,
+  watchAllSessions: true,
+};
+
 function getConfigFilePath(): string {
   return path.join(os.homedir(), LAYOUT_FILE_DIR, CONFIG_FILE_NAME);
 }
@@ -159,51 +167,42 @@ export function parseUserDirectories(raw: unknown): UserDirectory[] {
 }
 
 /** Coerce a loose object into a valid AdapterSettings with defaults for missing/wrong-typed fields. */
-function parseAdapterSettings(raw: unknown): AdapterSettings {
+function parseAdapterSettings(
+  raw: unknown,
+  defaults: AdapterSettings = DEFAULT_ADAPTER_SETTINGS,
+): AdapterSettings {
   const obj = (raw && typeof raw === 'object' ? raw : {}) as Partial<AdapterSettings>;
   return {
-    soundEnabled:
-      typeof obj.soundEnabled === 'boolean'
-        ? obj.soundEnabled
-        : DEFAULT_ADAPTER_SETTINGS.soundEnabled,
+    soundEnabled: typeof obj.soundEnabled === 'boolean' ? obj.soundEnabled : defaults.soundEnabled,
     lastSeenVersion:
-      typeof obj.lastSeenVersion === 'string'
-        ? obj.lastSeenVersion
-        : DEFAULT_ADAPTER_SETTINGS.lastSeenVersion,
+      typeof obj.lastSeenVersion === 'string' ? obj.lastSeenVersion : defaults.lastSeenVersion,
     alwaysShowLabels:
-      typeof obj.alwaysShowLabels === 'boolean'
-        ? obj.alwaysShowLabels
-        : DEFAULT_ADAPTER_SETTINGS.alwaysShowLabels,
+      typeof obj.alwaysShowLabels === 'boolean' ? obj.alwaysShowLabels : defaults.alwaysShowLabels,
     ghostHeadlessAgents:
       typeof obj.ghostHeadlessAgents === 'boolean'
         ? obj.ghostHeadlessAgents
-        : DEFAULT_ADAPTER_SETTINGS.ghostHeadlessAgents,
+        : defaults.ghostHeadlessAgents,
     watchAllSessions:
-      typeof obj.watchAllSessions === 'boolean'
-        ? obj.watchAllSessions
-        : DEFAULT_ADAPTER_SETTINGS.watchAllSessions,
+      typeof obj.watchAllSessions === 'boolean' ? obj.watchAllSessions : defaults.watchAllSessions,
     hooksInfoShown:
-      typeof obj.hooksInfoShown === 'boolean'
-        ? obj.hooksInfoShown
-        : DEFAULT_ADAPTER_SETTINGS.hooksInfoShown,
-    showAreas:
-      typeof obj.showAreas === 'boolean' ? obj.showAreas : DEFAULT_ADAPTER_SETTINGS.showAreas,
+      typeof obj.hooksInfoShown === 'boolean' ? obj.hooksInfoShown : defaults.hooksInfoShown,
+    showAreas: typeof obj.showAreas === 'boolean' ? obj.showAreas : defaults.showAreas,
     areaMappings: parseAreaMappings(obj.areaMappings),
     bypassPermissions:
       typeof obj.bypassPermissions === 'boolean'
         ? obj.bypassPermissions
-        : DEFAULT_ADAPTER_SETTINGS.bypassPermissions,
+        : defaults.bypassPermissions,
     showHostDirectories:
       typeof obj.showHostDirectories === 'boolean'
         ? obj.showHostDirectories
-        : DEFAULT_ADAPTER_SETTINGS.showHostDirectories,
+        : defaults.showHostDirectories,
   };
 }
 
 function emptyConfig(): PixelAgentsConfig {
   return {
     vscode: { ...DEFAULT_ADAPTER_SETTINGS },
-    standalone: { ...DEFAULT_ADAPTER_SETTINGS },
+    standalone: { ...STANDALONE_DEFAULT_ADAPTER_SETTINGS },
     externalAssetDirectories: [],
     hooksConsent: {},
     hooksEnabled: {},
@@ -221,7 +220,7 @@ export function readConfig(): PixelAgentsConfig {
     const parsed = JSON.parse(raw) as Partial<PixelAgentsConfig>;
     return {
       vscode: parseAdapterSettings(parsed.vscode),
-      standalone: parseAdapterSettings(parsed.standalone),
+      standalone: parseAdapterSettings(parsed.standalone, STANDALONE_DEFAULT_ADAPTER_SETTINGS),
       externalAssetDirectories: Array.isArray(parsed.externalAssetDirectories)
         ? parsed.externalAssetDirectories.filter((d): d is string => typeof d === 'string')
         : [],

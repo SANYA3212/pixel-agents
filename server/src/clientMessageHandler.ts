@@ -1,10 +1,12 @@
 import type { StateAdapter } from '../../core/src/adapter.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import { resendAgentActivity } from './agentActivityResend.js';
+import { agentProviderMeta } from './agentCreatedMessage.js';
 import { buildAgentDiagnostics } from './agentDiagnostics.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './assetLoader.js';
+import { characterSpritesMessage } from './assetLoader.js';
 import {
   getHooksConsent,
   getHooksEnabled,
@@ -483,7 +485,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // 2. Assets (from server cache, loaded at startup via pngjs)
   if (cache) {
     if (cache.characters) {
-      send({ type: 'characterSpritesLoaded', characters: cache.characters.characters });
+      send(characterSpritesMessage(cache.characters));
     }
     if (cache.pets) {
       send({
@@ -593,7 +595,16 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const directoryNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   const persistedSeats = adapter?.loadSeats() ?? {};
-  const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
+  const agentMeta: Record<
+    number,
+    {
+      palette?: number;
+      hueShift?: number;
+      seatId?: string;
+      providerId?: string;
+      agentLabel?: string;
+    }
+  > = {};
   for (const [id, agent] of store) {
     agentIds.push(id);
     if (agent.directoryName) {
@@ -607,6 +618,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
       palette: agent.palette,
       hueShift: agent.hueShift,
       seatId: persisted?.seatId,
+      ...agentProviderMeta(agent),
     };
   }
   send({

@@ -471,13 +471,92 @@ export function sendFloorTilesToWebview(
 export interface LoadedCharacterSprites {
   /** Pre-colored characters, each with 7 frames per direction */
   characters: CharacterDirectionSprites[];
+  /** Per-provider character skins (assets/characters/agents/<providerId>.png),
+   *  keyed by provider id. Same 112×96 layout as char_N.png. */
+  providerSkins?: Record<string, CharacterDirectionSprites>;
 }
 
 export function mergeCharacterSprites(
   a: LoadedCharacterSprites,
   b: LoadedCharacterSprites,
 ): LoadedCharacterSprites {
-  return { characters: [...a.characters, ...b.characters] };
+  const merged: LoadedCharacterSprites = { characters: [...a.characters, ...b.characters] };
+  // The later source (an external asset directory) wins per provider.
+  if (a.providerSkins || b.providerSkins) {
+    merged.providerSkins = { ...a.providerSkins, ...b.providerSkins };
+  }
+  return merged;
+}
+
+/** The `characterSpritesLoaded` message for a loaded sprite set. */
+export function characterSpritesMessage(chars: LoadedCharacterSprites): Record<string, unknown> {
+  const msg: Record<string, unknown> = {
+    type: 'characterSpritesLoaded',
+    characters: chars.characters,
+  };
+  if (chars.providerSkins && Object.keys(chars.providerSkins).length > 0) {
+    msg.providerSkins = chars.providerSkins;
+  }
+  return msg;
+}
+
+/** File names accepted as provider skins: `<providerId>.png`. */
+const PROVIDER_SKIN_FILE = /^([a-z0-9][a-z0-9_-]*)\.png$/i;
+const PROVIDER_SKIN_MIN_WIDTH = CHAR_FRAMES_PER_ROW * 16;
+const PROVIDER_SKIN_MIN_HEIGHT = 3 * 32;
+
+/** PNG dimensions from the IHDR chunk, or null for a non-PNG buffer. */
+function pngSize(buf: Buffer): { width: number; height: number } | null {
+  if (buf.length < 24 || buf.readUInt32BE(0) !== 0x89504e47) return null;
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+}
+
+/**
+ * Load per-provider skins from `<root>/assets/characters/agents/<providerId>.png`.
+ * Missing directory → empty record. Files that are not a full 112×96 character
+ * sheet are skipped with a warning.
+ */
+export function loadProviderSkins(root: string): Record<string, CharacterDirectionSprites> {
+  const skins: Record<string, CharacterDirectionSprites> = {};
+  const dir = path.join(root, 'assets', 'characters', 'agents');
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return skins;
+  }
+  for (const entry of entries.sort()) {
+    const m = PROVIDER_SKIN_FILE.exec(entry);
+    if (!m) continue;
+    const providerId = m[1].toLowerCase();
+    try {
+      const buf = fs.readFileSync(path.join(dir, entry));
+      const size = pngSize(buf);
+      if (!size || size.width < PROVIDER_SKIN_MIN_WIDTH || size.height < PROVIDER_SKIN_MIN_HEIGHT) {
+        console.warn(
+          `  [AssetLoader] Skipping provider skin ${entry}: not a 112×96 character sheet`,
+        );
+        continue;
+      }
+      skins[providerId] = decodeCharacterPng(buf);
+    } catch (err) {
+      console.warn(
+        `  [AssetLoader] ⚠️  Error loading provider skin ${entry}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+  const count = Object.keys(skins).length;
+  if (count > 0) {
+    console.log(`[AssetLoader] ✅ Loaded ${count} provider skins from ${dir}`);
+  }
+  return skins;
+}
+
+function withProviderSkins(
+  chars: LoadedCharacterSprites,
+  skins: Record<string, CharacterDirectionSprites>,
+): LoadedCharacterSprites {
+  return Object.keys(skins).length > 0 ? { ...chars, providerSkins: skins } : chars;
 }
 
 /**
@@ -505,7 +584,7 @@ export async function loadCharacterSprites(
     console.log(
       `[AssetLoader] ✅ Loaded ${characters.length} character sprites (${CHAR_FRAMES_PER_ROW} frames × 3 directions each)`,
     );
-    return { characters };
+    return withProviderSkins({ characters }, loadProviderSkins(assetsRoot));
   } catch (err) {
     console.error(
       `[AssetLoader] ❌ Error loading character sprites: ${err instanceof Error ? err.message : err}`,
@@ -527,6 +606,7 @@ export async function loadExternalCharacterSprites(
     if (!fs.existsSync(charDir)) {
       return null;
     }
+    const skins = loadProviderSkins(externalRoot);
 
     const entries = fs.readdirSync(charDir);
     const charFiles: { index: number; filename: string }[] = [];
@@ -538,7 +618,8 @@ export async function loadExternalCharacterSprites(
     }
 
     if (charFiles.length === 0) {
-      return null;
+      // A directory may contribute only provider skins.
+      return Object.keys(skins).length > 0 ? { characters: [], providerSkins: skins } : null;
     }
 
     charFiles.sort((a, b) => a.index - b.index);
@@ -563,13 +644,13 @@ export async function loadExternalCharacterSprites(
     }
 
     if (characters.length === 0) {
-      return null;
+      return Object.keys(skins).length > 0 ? { characters: [], providerSkins: skins } : null;
     }
 
     console.log(
       `[AssetLoader] ✅ Loaded ${characters.length} external character sprites from ${externalRoot}`,
     );
-    return { characters };
+    return withProviderSkins({ characters }, skins);
   } catch (err) {
     console.error(
       `[AssetLoader] ❌ Error loading external character sprites: ${err instanceof Error ? err.message : err}`,
@@ -585,10 +666,7 @@ export function sendCharacterSpritesToWebview(
   webview: vscode.Webview,
   charSprites: LoadedCharacterSprites,
 ): void {
-  webview.postMessage({
-    type: 'characterSpritesLoaded',
-    characters: charSprites.characters,
-  });
+  webview.postMessage(characterSpritesMessage(charSprites));
   console.log(`📤 Sent ${charSprites.characters.length} character sprites to webview`);
 }
 

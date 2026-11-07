@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
 import { resendAgentActivity } from '../../server/src/agentActivityResend.js';
+import { agentProviderMeta } from '../../server/src/agentCreatedMessage.js';
 import { createAgentState } from '../../server/src/agentState.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
@@ -514,8 +515,12 @@ export function sendExistingAgents(
   }
   agentIds.sort((a, b) => a - b);
 
-  // Include persisted palette/seatId from separate key
-  const agentMeta = adapter.loadSeats();
+  // Include persisted palette/seatId from separate key, plus each live agent's
+  // provider id (absent ⇒ 'claude') and display label.
+  const agentMeta: Record<string, Record<string, unknown>> = { ...adapter.loadSeats() };
+  for (const [id, agent] of agents) {
+    agentMeta[String(id)] = { ...agentMeta[String(id)], ...agentProviderMeta(agent) };
+  }
 
   // Include directoryName and isExternal per agent
   const directoryNames: Record<number, string> = {};

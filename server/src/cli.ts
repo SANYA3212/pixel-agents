@@ -12,6 +12,7 @@ import * as path from 'path';
 
 import { AgentRuntime } from './agentRuntime.js';
 import { AgentStateStore } from './agentStateStore.js';
+import { characterSpritesMessage } from './assetLoader.js';
 import {
   buildAssetCache,
   loadAllCharacters,
@@ -33,6 +34,7 @@ import {
 } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import { createDefaultProviderWatchers, ProviderWatcherManager } from './providerWatchers/index.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
@@ -309,7 +311,7 @@ async function main(): Promise<void> {
       assetCache.pets = pets;
       assetCache.furniture = furniture;
       if (characters) {
-        send({ type: 'characterSpritesLoaded', characters: characters.characters });
+        send(characterSpritesMessage(characters));
       }
       if (pets) {
         send({
@@ -404,6 +406,19 @@ async function main(): Promise<void> {
       runtime.startStaleCheck();
     }
 
+    // Non-Claude coding agents (Codex, OpenCode, Gemini CLI, Qwen Code, Kimi,
+    // Copilot CLI, Cursor agent): read-only watchers over their own session
+    // stores. Same Watch All Sessions rule as Claude: off = only sessions
+    // inside the directory the server was started from.
+    const providerWatchers = new ProviderWatcherManager({
+      store,
+      watchers: createDefaultProviderWatchers(),
+      watchAllSessions: runtime.watchAllSessions,
+      scopeDirs: () => [cwd],
+      removeAgent: (id) => runtime.removeAgent(id),
+    });
+    providerWatchers.start();
+
     // The URL the operator opens has to be REACHABLE (a wildcard bind address
     // is a bind target, not an address you can browse to — `--host 0.0.0.0`
     // used to print a dead `http://0.0.0.0:PORT`) and has to carry the token,
@@ -427,6 +442,7 @@ async function main(): Promise<void> {
       // wait for them: exiting now would cancel the SIGKILL escalation and
       // leave a child that ignores SIGHUP orphaned on a dead server.
       await ptyManager.disposeAll();
+      providerWatchers.stop();
       runtime.dispose();
       server.stop();
       process.exit(0);

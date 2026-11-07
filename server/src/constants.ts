@@ -29,6 +29,35 @@ export const EXTERNAL_STALE_CHECK_INTERVAL_MS = 30_000;
  *  so the file's mtime becomes stale before the dismissal expires. */
 export const DISMISSED_COOLDOWN_MS = 180_000; // 3 minutes
 
+// ── Provider Session Watchers (non-Claude agents) ──────────
+// server/src/providerWatchers/: polled readers of other coding agents' own
+// session stores (Codex rollouts, OpenCode's SQLite, Gemini chats, ...).
+/** How often every provider watcher is polled. */
+export const PROVIDER_WATCH_POLL_INTERVAL_MS = 1000;
+/** A session is adopted only if it had activity within this window. Applies at
+ *  startup (sessions modified in the last 10 minutes) and to every later poll. */
+export const PROVIDER_WATCH_ACTIVE_WINDOW_MS = 600_000; // 10 minutes
+/** A watched session's character is removed after this much inactivity. */
+export const PROVIDER_WATCH_REMOVE_AFTER_MS = 900_000; // 15 minutes
+/** Full directory re-scan cadence: finds resumed old sessions and picks up a
+ *  tool installed after the server started (its data dir appears later). */
+export const PROVIDER_WATCH_FULL_RESCAN_INTERVAL_MS = 30_000;
+/** An "active" session with no running tool and no new data for this long is
+ *  shown as waiting: the process most likely died mid-turn. */
+export const PROVIDER_WATCH_ACTIVE_STALE_MS = 300_000; // 5 minutes
+/** Session files up to this size are read whole when first adopted; larger
+ *  ones are read as head (metadata) + tail (current state). */
+export const PROVIDER_WATCH_FULL_READ_MAX_BYTES = 4 * 1024 * 1024;
+/** Tail read size for large session files on adoption. */
+export const PROVIDER_WATCH_TAIL_READ_BYTES = 1024 * 1024;
+/** Max bytes scanned for a session file's first (metadata) line. */
+export const PROVIDER_WATCH_HEAD_READ_MAX_BYTES = 1024 * 1024;
+/** Max bytes consumed from one file in one poll (a burst catches up next tick). */
+export const PROVIDER_WATCH_MAX_READ_PER_POLL_BYTES = 8 * 1024 * 1024;
+/** Agent ids for watched sessions start here, far above terminal/Claude ids so
+ *  they never collide with persisted ids restored on the first connect. */
+export const PROVIDER_WATCH_AGENT_ID_BASE = 100_000;
+
 // ── Context Window Usage ────────────────────────────────────
 /** Window size assumed until a transcript proves otherwise. Transcripts never
  *  state the model's context limit, so this is the floor, not the truth. */

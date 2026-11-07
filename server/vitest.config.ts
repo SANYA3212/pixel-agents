@@ -7,7 +7,9 @@ export default defineConfig({
     globals: true,
     testTimeout: 10_000,
     include: ['__tests__/**/*.test.ts'],
-    setupFiles: ['allure-vitest/setup'],
+    // windowsHome: os.homedir() follows HOME on Windows, so suites that sandbox
+    // HOME never touch the real ~/.pixel-agents (see the file).
+    setupFiles: ['allure-vitest/setup', './__tests__/setup/windowsHome.ts'],
     reporters: [
       'default',
       [

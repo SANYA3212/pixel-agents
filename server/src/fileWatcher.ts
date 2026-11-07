@@ -1495,6 +1495,8 @@ export function startStaleExternalAgentCheck(
 
     for (const [id, agent] of agents) {
       if (!agent.isExternal) continue;
+      // Provider-watched agents are removed by their own watcher.
+      if (agent.providerWatched) continue;
 
       // Only despawn if the JSONL file has been deleted from disk.
       // Inactive external agents stay alive so they can resume when

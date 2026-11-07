@@ -34,6 +34,14 @@ export interface AgentState {
   hooksOnly?: boolean;
   /** Provider that created this agent (defaults to 'claude') */
   providerId?: string;
+  /** Human-readable name for the character (e.g. "Codex · my-repo"). Set for
+   *  agents adopted by a provider session watcher. */
+  agentLabel?: string;
+  /** True when the agent is driven by a provider session watcher
+   *  (server/src/providerWatchers/), not by Claude transcripts or hooks. Such
+   *  agents have no terminal, are never persisted (the watcher re-derives them
+   *  on every start) and are skipped by the Claude scanners. */
+  providerWatched?: boolean;
   /** Set when SessionEnd(reason=clear) fires; cleared when SessionStart(source=clear) reassigns */
   pendingClear?: boolean;
   /** Hook-generated tool ID for PreToolUse/PostToolUse correlation */

@@ -57,7 +57,8 @@ export async function loadAllCharacters(
   // char_N.png past the bundled 6). Centralizing here means every entry
   // point -- standalone startup, standalone reload, VS Code startup,
   // VS Code reload -- sees the same count without four scattered calls.
-  if (chars) setPaletteCount(chars.characters.length);
+  // (An external dir may contribute only provider skins: no palettes.)
+  if (chars && chars.characters.length > 0) setPaletteCount(chars.characters.length);
   return chars;
 }
 
