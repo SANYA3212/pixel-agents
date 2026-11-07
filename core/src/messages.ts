@@ -90,6 +90,8 @@ export interface AgentCreated {
   isExternal?: boolean;
   palette?: number;
   hueShift?: number;
+  providerId?: string;
+  agentLabel?: string;
 }
 
 export interface AgentClosed {
@@ -114,6 +116,8 @@ export interface AgentSeatMeta {
   palette?: number;
   hueShift?: number;
   seatId?: string;
+  providerId?: string;
+  agentLabel?: string;
 }
 
 export interface AgentStatus {
@@ -239,6 +243,7 @@ export interface FurnitureAssetMessage {
 export interface CharacterSpritesLoaded {
   type: 'characterSpritesLoaded';
   characters: CharacterSpriteSet[];
+  providerSkins?: Record<string, CharacterSpriteSet>;
 }
 
 export interface CharacterSpriteSet {

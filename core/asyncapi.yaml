@@ -204,6 +204,15 @@ components:
         hueShift:
           type: integer
           description: Server-assigned hue shift in degrees (0-360).
+        providerId:
+          type: string
+          description: |
+            Which coding agent this is ('claude', 'codex', 'opencode', 'kimi',
+            'gemini', 'qwen', 'copilot', 'cursor'). Absent means 'claude'.
+            The webview uses it to pick the agent's skin.
+        agentLabel:
+          type: string
+          description: Human-readable label for non-Claude agents (e.g. "Codex · my-project").
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -511,6 +520,15 @@ components:
         characters:
           type: array
           items:
+            $ref: '#/components/schemas/CharacterSpriteSet'
+        providerSkins:
+          type: object
+          description: |
+            Per-agent-type skins, keyed by providerId ('claude', 'codex', ...).
+            Loaded from assets/characters/agents/<providerId>.png. When an agent's
+            providerId has a skin here, the webview draws that skin instead of a
+            palette from `characters`.
+          additionalProperties:
             $ref: '#/components/schemas/CharacterSpriteSet'
 
     PetSpritesLoaded:
@@ -1336,6 +1354,12 @@ components:
           type: integer
         seatId:
           type: string
+        providerId:
+          type: string
+          description: Coding agent type (see AgentCreated.providerId). Absent means 'claude'.
+        agentLabel:
+          type: string
+          description: Human-readable label for non-Claude agents.
 
     SeatAssignment:
       description: |
