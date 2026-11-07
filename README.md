@@ -32,6 +32,65 @@ It ships in two forms from the same codebase:
 
 The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation today; Codex, Gemini, Cursor, and others are on the roadmap.
 
+> [!NOTE]
+> **This is the `office-plus` branch of a community fork.** It builds on Pixel Agents v1.5.0 by [Pablo De Lucca](https://github.com/pablodelucca) and contributors ([pixel-agents-hq/pixel-agents](https://github.com/pixel-agents-hq/pixel-agents), MIT). Everything below the Office Plus section describes the original project.
+
+## Office Plus (this branch)
+
+A livelier, multi-agent office: every coding agent you use gets its own mascot, idle agents hang out and chat, and they walk to a desk the moment they get work.
+
+![Office Plus agent skins](docs/agent-skins-preview.png)
+
+### What's new
+
+- **More agents, detected automatically** — besides Claude Code, the standalone server watches the local session logs of other coding agents and adds every active session to the office on its own. No hooks to install and nothing to set up in the browser:
+
+  | Agent                                    | Watched source                                           | Status                                                                                  |
+  | ---------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+  | OpenAI Codex (CLI **and** Codex Desktop) | `~/.codex/sessions/**/rollout-*.jsonl`                   | verified on real sessions                                                               |
+  | OpenCode (CLI **and** OpenCode Desktop)  | `~/.local/share/opencode/opencode.db` (read-only SQLite) | verified on real sessions                                                               |
+  | Gemini CLI                               | `~/.gemini/tmp/*/chats/`                                 | verified; Gemini writes tool calls only after they finish, so live tool labels are rare |
+  | Kimi Code CLI                            | `~/.kimi/sessions/`, `~/.kimi-code/sessions/`            | based on the documented format                                                          |
+  | Qwen Code                                | `~/.qwen/projects/*/chats/`, `~/.qwen/tmp/`              | based on the documented format                                                          |
+  | GitHub Copilot CLI                       | `~/.copilot/session-state/`                              | based on the documented format                                                          |
+  | Cursor agent CLI                         | `~/.cursor/chats/*/*/store.db`                           | best effort (reverse-engineered)                                                        |
+
+  Watchers are read-only, poll cheaply (an idle tick costs a few ms) and switch themselves on when a tool gets installed later. Sessions appear when they show activity and leave after 15 minutes of silence. Limit them with `PIXEL_AGENTS_WATCH_PROVIDERS=codex,opencode` (or `none`). SQLite-backed agents need Node 22.5+ (`node:sqlite`).
+
+- **A mascot per agent** — Claude, Codex, OpenCode, Kimi, Gemini, Qwen, Copilot and Cursor each have their own pixel-art skin (walk, type and read animations in every direction). Several agents of the same type get distinct hue shifts. Skins live in `assets/characters/agents/<providerId>.png` and can be overridden from an external asset directory.
+- **Idle agents roam** — an agent without a task gets up and wanders the office instead of sitting at its desk. When a task arrives it walks to its seat, sits down and works; when the turn ends it stands up again.
+- **Binary small talk** — roaming agents occasionally show speech bubbles made of bits (`0101 1101`), and two idle agents that meet face each other and hold a short conversation. Waiting/permission bubbles always win.
+- **Residents** — the **+ Resident** button adds a persistent agent of any type (with an optional name) that lives in the office even when nothing is running. When a real session of that type starts, the resident becomes its body: it walks to a computer and works, and goes back to roaming when the session ends. Residents are stored in `~/.pixel-agents/layout.json`. Select a resident and click **×** on its label to remove it.
+- **Protocol** — `agentCreated` / `existingAgents.agentMeta` carry `providerId` and `agentLabel`; `characterSpritesLoaded` carries `providerSkins` (see `core/asyncapi.yaml`).
+- **Windows test isolation** — the server test suite now keeps `os.homedir()` inside its temp `HOME` on Windows, so running the tests never touches the real `~/.pixel-agents` or `~/.claude`.
+
+### Try it
+
+```bash
+git clone -b office-plus https://github.com/SANYA3212/pixel-agents.git
+cd pixel-agents
+npm ci
+npm run build
+npm pack
+npm install -g ./pixel-agents-1.5.0.tgz
+pixel-agents
+```
+
+Open the printed URL, start any supported agent, and watch it show up. The new watchers run in the standalone CLI; the VS Code extension compiles with the new protocol fields but does not start the watchers.
+
+### Known limitations
+
+- Two agents with a low-saturation skin (e.g. two Codex sessions) are hard to tell apart by colour; their labels differ.
+- An agent created before the browser has loaded the layout, or a resident added while a same-type agent is already running, does not merge with an existing character.
+- If a watched agent's process dies mid-tool, its character keeps working until the 15-minute timeout.
+- Residents can't be added or removed from the mobile shell (they still appear and bind there).
+
+### Credits
+
+- Pixel Agents © Pablo De Lucca and contributors, MIT. This branch keeps the original [LICENSE](LICENSE).
+- Office Plus additions by [@SANYA3212](https://github.com/SANYA3212), built with Claude Code.
+- The agent mascots are original pixel art generated by `scripts/generate-agent-skins.mjs` (`node scripts/generate-agent-skins.mjs` rebuilds them and `docs/agent-skins-preview.png`). They are fan art inspired by each product's colours. Claude, Codex, OpenCode, Kimi, Gemini, Qwen, GitHub Copilot and Cursor are trademarks of their respective owners; this project is not affiliated with or endorsed by any of them.
+
 ![Pixel Agents screenshot](webview-ui/public/office.png)
 
 ## Features
