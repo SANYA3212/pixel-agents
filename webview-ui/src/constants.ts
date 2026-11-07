@@ -667,3 +667,22 @@ export const WALLPAPER_TOP_OVERHANG_TILES = 1;
 /** How often wallpaper mode re-checks the layout's extent (layout reloads and
  *  edits from other clients arrive without a React re-render). */
 export const WALLPAPER_LAYOUT_POLL_MS = 1000;
+/** Live wallpaper settings (URL params; Wallpaper Engine user properties
+ *  update them without a reload — see wallpaperSettings.ts). */
+export const WALLPAPER_CHATTER_PARAM = 'chatter';
+export const WALLPAPER_BG_PARAM = 'bg';
+export const WALLPAPER_CLAUDE_SKIN_PARAM = 'claudeSkin';
+export const WALLPAPER_VIGNETTE_PARAM = 'vignette';
+/** Wallpaper Engine user-property keys (extras/wallpaper-engine/project.json). */
+export const WE_PROP_SHOW_LABELS = 'showlabels';
+export const WE_PROP_CHATTER = 'chatter';
+export const WE_PROP_ZOOM = 'zoom';
+export const WE_PROP_BACKGROUND_COLOR = 'backgroundcolor';
+export const WE_PROP_CLAUDE_SKIN = 'claudeskin';
+export const WE_PROP_VIGNETTE = 'vignette';
+
+// ── Claude skin choice (New mascot vs the square Classic one) ─────────────────
+/** providerSkins key of the classic Claude mascot (sent when its PNG exists). */
+export const CLAUDE_CLASSIC_SKIN_ID = 'claude-classic';
+/** localStorage key of the normal-mode choice ('new' | 'classic'). */
+export const CLAUDE_SKIN_STORAGE_KEY = 'pixelAgents.claudeSkin';

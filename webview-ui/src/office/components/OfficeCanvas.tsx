@@ -66,6 +66,9 @@ interface OfficeCanvasProps {
   /** Wallpaper mode: the camera is owned by the caller (no follow, no greeter
    *  drift) and the canvas ignores all pointer input. */
   staticView?: boolean;
+  /** CSS colour behind the office (wallpaper mode's bg setting); the theme
+   *  background when undefined. */
+  backgroundColor?: string;
 }
 
 export function OfficeCanvas({
@@ -87,6 +90,7 @@ export function OfficeCanvas({
   activeAreaLabel,
   tapSelectsFirst = false,
   staticView = false,
+  backgroundColor,
 }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -811,7 +815,11 @@ export function OfficeCanvas({
   }, []);
 
   return (
-    <div ref={containerRef} className="w-full h-full relative overflow-hidden bg-bg">
+    <div
+      ref={containerRef}
+      className="w-full h-full relative overflow-hidden bg-bg"
+      style={backgroundColor ? { backgroundColor } : undefined}
+    >
       <canvas
         ref={canvasRef}
         data-testid={OFFICE_CANVAS_TEST_ID}

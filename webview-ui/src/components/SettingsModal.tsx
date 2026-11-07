@@ -1,5 +1,11 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 
+import {
+  type ClaudeSkinChoice,
+  getClaudeSkinPreference,
+  setClaudeSkinPreference,
+  subscribeClaudeSkin,
+} from '../claudeSkin.js';
 import { isSoundEnabled, setSoundEnabled } from '../notificationSound.js';
 import { isBrowserRuntime } from '../runtime.js';
 import { transport } from '../transport/index.js';
@@ -7,6 +13,11 @@ import { Button } from './ui/Button.js';
 import { Checkbox } from './ui/Checkbox.js';
 import { MenuItem } from './ui/MenuItem.js';
 import { Modal } from './ui/Modal.js';
+
+const CLAUDE_SKIN_OPTIONS: { choice: ClaudeSkinChoice; label: string }[] = [
+  { choice: 'new', label: 'New' },
+  { choice: 'classic', label: 'Classic' },
+];
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -71,6 +82,7 @@ export function SettingsModal({
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [assetDirDraft, setAssetDirDraft] = useState('');
+  const claudeSkin = useSyncExternalStore(subscribeClaudeSkin, getClaudeSkinPreference);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings">
@@ -240,6 +252,28 @@ export function SettingsModal({
         checked={showHostDirectories}
         onChange={onToggleShowHostDirectories}
       />
+      {/* Which mascot Claude characters wear. Local to this browser
+          (localStorage), never sent to the server. */}
+      <div
+        className="flex items-center justify-between w-full py-6 px-10 gap-8"
+        data-testid="claude-skin-setting"
+      >
+        <span>Claude Skin</span>
+        <span className="flex gap-4 shrink-0">
+          {CLAUDE_SKIN_OPTIONS.map(({ choice, label }) => (
+            <Button
+              key={choice}
+              variant={claudeSkin === choice ? 'active' : 'default'}
+              size="sm"
+              aria-pressed={claudeSkin === choice}
+              data-claude-skin={choice}
+              onClick={() => setClaudeSkinPreference(choice)}
+            >
+              {label}
+            </Button>
+          ))}
+        </span>
+      </div>
       <Checkbox label="Debug View" checked={isDebugMode} onChange={onToggleDebugMode} />
     </Modal>
   );

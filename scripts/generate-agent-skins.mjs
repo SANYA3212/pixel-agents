@@ -398,6 +398,50 @@ SKINS.claude = {
   },
 };
 
+// ── Claude (classic): wide square terracotta block with dot eyes ──
+SKINS['claude-classic'] = {
+  ol: '#3a1a10',
+  leg: '#b8613f',
+  shoe: '#7a3a24',
+  arm: '#d97757',
+  hand: '#e98d6c',
+  bl: 3,
+  br: 12,
+  sy: 19,
+  sideR: 11,
+  sideArmX: 6,
+  body(f, c) {
+    const BASE = '#d97757';
+    const HL = '#e8906f';
+    const SH = '#bd6243';
+    const EYE = '#2a120b';
+    const side = c.dir === 'right';
+    const block = side ? rect(4, 13, 11, 23) : rect(1, 13, 14, 23);
+    shape(f, move(block, 0, c.oy), tones(BASE, HL, SH), this.ol, { corners: true });
+    const y = (v) => v + c.oy;
+    if (c.dir === 'up') {
+      f.dots([3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((x) => [x, y(16), SH]));
+      return;
+    }
+    const fx = c.fx;
+    const fy = c.fy;
+    // blink on the second typing frame
+    const blink = c.pose === 'type' && c.phase === 1;
+    const eye = (x) =>
+      blink
+        ? [[x + fx, y(18 + fy), EYE]]
+        : [
+            [x + fx, y(17 + fy), EYE],
+            [x + fx, y(18 + fy), EYE],
+          ];
+    if (side) {
+      f.dots(eye(9));
+      return;
+    }
+    f.dots([...eye(5), ...eye(10)]);
+  },
+};
+
 // ── Codex: white rounded terminal blob with a black screen face ">_" ──
 SKINS.codex = {
   ol: '#101013',

@@ -25,7 +25,7 @@ import type {
   CatalogEntry,
   CharacterDirectionSprites,
 } from '../../core/src/assets/types.ts';
-import { PROVIDER_IDS } from './constants.js';
+import { CLAUDE_CLASSIC_SKIN_ID, PROVIDER_IDS } from './constants.js';
 
 interface MockPayload {
   characters: CharacterDirectionSprites[];
@@ -154,14 +154,15 @@ function decodeCharacterSheet(png: DecodedPng): CharacterDirectionSprites {
   return byDir;
 }
 
-/** Optional per-agent-type skins (assets/characters/agents/<providerId>.png).
+/** Optional per-agent-type skins (assets/characters/agents/<providerId>.png),
+ *  plus the alternative classic Claude skin (claude-classic.png).
  *  Missing files are simply skipped: the office falls back to palettes. */
 async function decodeProviderSkins(
   base: string,
 ): Promise<Record<string, CharacterDirectionSprites>> {
   const out: Record<string, CharacterDirectionSprites> = {};
   await Promise.all(
-    PROVIDER_IDS.map(async (id) => {
+    [...PROVIDER_IDS, CLAUDE_CLASSIC_SKIN_ID].map(async (id) => {
       try {
         const png = await decodePng(`${base}assets/characters/agents/${id}.png`);
         if (png.width < CHAR_FRAME_W * CHAR_FRAMES_PER_ROW) return;

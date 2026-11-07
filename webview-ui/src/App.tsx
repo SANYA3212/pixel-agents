@@ -45,6 +45,11 @@ import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
 import { wallpaperParams } from './wallpaper.js';
+import {
+  getWallpaperSettings,
+  initWallpaperSettings,
+  subscribeWallpaperSettings,
+} from './wallpaperSettings.js';
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
@@ -69,6 +74,9 @@ function getCurrentLayout(): OfficeLayout {
 // ?wallpaper=1: office-only view for live desktop wallpapers (see wallpaper.ts).
 // Read once — the URL never changes under a running page.
 const wallpaper = wallpaperParams();
+// The live settings start from the URL; Wallpaper Engine then updates them
+// through window.wallpaperPropertyListener (registered only in wallpaper mode).
+if (wallpaper.enabled) initWallpaperSettings(wallpaper);
 
 function App() {
   // Browser runtime (dev or static dist): dispatch mock messages after the
@@ -151,6 +159,20 @@ function App() {
   // Wallpaper mode always gets the desktop layout (it renders neither shell's
   // chrome, but the office must not be squeezed into the mobile track).
   const isMobile = useIsMobile() && !wallpaper.enabled;
+  // Wallpaper mode's live settings (defaults outside wallpaper mode, unused).
+  const wallpaperSettings = useSyncExternalStore(subscribeWallpaperSettings, getWallpaperSettings);
+  // bg=RRGGBB: the colour around the office, also behind the page itself.
+  const wallpaperBg =
+    wallpaper.enabled && wallpaperSettings.bg ? `#${wallpaperSettings.bg}` : undefined;
+  useEffect(() => {
+    if (!wallpaper.enabled) return;
+    const body = document.body;
+    const previous = body.style.backgroundColor;
+    body.style.backgroundColor = wallpaperBg ?? '';
+    return () => {
+      body.style.backgroundColor = previous;
+    };
+  }, [wallpaperBg]);
   // Software keyboard: whether it is up (the key bar shows), and the height
   // to clamp the shell to so the terminal shrinks (and the PTY resizes)
   // instead of hiding its input line under the keys (iOS only — Android
@@ -334,7 +356,7 @@ function App() {
     layoutReady,
     getCurrentLayout,
     containerRef,
-    wallpaper.zoom,
+    wallpaperSettings.zoom,
   );
 
   const [editorTickForKeyboard, setEditorTickForKeyboard] = useState(0);
@@ -515,7 +537,9 @@ function App() {
     })();
 
   if (!layoutReady) {
-    if (wallpaper.enabled) return <div className="w-full h-full bg-bg" />;
+    if (wallpaper.enabled) {
+      return <div className="w-full h-full bg-bg" style={{ backgroundColor: wallpaperBg }} />;
+    }
     return <div className="w-full h-full flex items-center justify-center ">Loading...</div>;
   }
 
@@ -528,7 +552,7 @@ function App() {
       <div
         ref={containerRef}
         className="w-full h-full relative overflow-hidden bg-bg select-none"
-        style={{ pointerEvents: 'none' }}
+        style={{ pointerEvents: 'none', backgroundColor: wallpaperBg }}
       >
         <OfficeCanvas
           officeState={officeState}
@@ -548,11 +572,14 @@ function App() {
           showAreas={showAreas}
           activeAreaLabel={null}
           staticView
+          backgroundColor={wallpaperBg}
         />
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{ background: 'var(--vignette)' }}
-        />
+        {wallpaperSettings.vignette && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: 'var(--vignette)' }}
+          />
+        )}
         <ToolOverlay
           officeState={officeState}
           agents={agents}
@@ -563,7 +590,8 @@ function App() {
           zoom={wallpaperCamera.zoom}
           panRef={wallpaperCamera.panRef}
           onCloseAgent={handleCloseAgent}
-          alwaysShowOverlay={wallpaper.labels}
+          alwaysShowOverlay={wallpaperSettings.labels}
+          showChatter={wallpaperSettings.chatter}
         />
       </div>
     );

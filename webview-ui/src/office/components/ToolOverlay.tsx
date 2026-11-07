@@ -61,6 +61,9 @@ interface ToolOverlayProps {
   /** Remove a Resident (the x on a selected resident that hosts no agent). */
   onRemoveResident?: (residentId: string) => void;
   alwaysShowOverlay: boolean;
+  /** Draw the binary chatter bubbles (default true). Off only hides them —
+   *  roaming conversations keep running. */
+  showChatter?: boolean;
 }
 
 /** Derive a short human-readable activity string from tools/status */
@@ -178,6 +181,7 @@ export function ToolOverlay({
   onCloseAgent,
   onRemoveResident,
   alwaysShowOverlay,
+  showChatter = true,
 }: ToolOverlayProps) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -263,7 +267,7 @@ export function ToolOverlay({
         // Binary chatter while roaming: above the head, lifted clear of the
         // label panel when one shows. Never drawn with a status bubble up.
         let chatterNode = null;
-        if (chatterVisible(ch)) {
+        if (showChatter && chatterVisible(ch)) {
           const sitOff = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
           chatterNode = (
             <ChatterBubble

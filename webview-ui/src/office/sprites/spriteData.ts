@@ -1,3 +1,4 @@
+import { getClaudeSkin, resolveSkinId } from '../../claudeSkin.js';
 import type { ColorValue } from '../../components/ui/types.js';
 import { DEFAULT_PROVIDER_ID, PALETTE_COUNT } from '../../constants.js';
 import { adjustSprite } from '../colorize.js';
@@ -248,7 +249,10 @@ export function getProviderSkinSprites(providerId: string, skinHue = 0): Charact
 }
 
 /** What a character looks like: its agent type's skin when one is loaded,
- *  otherwise the palette sprites (the pre-skin behaviour). */
+ *  otherwise the palette sprites (the pre-skin behaviour). Claude characters
+ *  wear `claude-classic` instead while that is the chosen Claude skin (see
+ *  claudeSkin.ts); the choice is read on every call, so a change re-skins
+ *  every character on the next frame (the caches are keyed by skin id). */
 export interface CharacterLook {
   palette: number;
   hueShift: number;
@@ -257,6 +261,7 @@ export interface CharacterLook {
 }
 
 export function getSpritesForLook(look: CharacterLook): CharacterSprites {
-  const skin = getProviderSkinSprites(look.providerId ?? DEFAULT_PROVIDER_ID, look.skinHue ?? 0);
+  const skinId = resolveSkinId(look.providerId, getClaudeSkin(), (id) => providerSkins.has(id));
+  const skin = getProviderSkinSprites(skinId, look.skinHue ?? 0);
   return skin ?? getCharacterSprites(look.palette, look.hueShift);
 }

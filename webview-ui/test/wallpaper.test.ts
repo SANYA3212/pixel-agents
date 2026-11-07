@@ -14,8 +14,17 @@ const F = TileType.FLOOR_1;
 const W = TileType.WALL;
 
 describe('parseWallpaperParams', () => {
+  const DEFAULTS = {
+    labels: true,
+    chatter: true,
+    zoom: null,
+    bg: null,
+    claudeSkin: null,
+    vignette: true,
+  };
+
   it('is off without wallpaper=1', () => {
-    expect(parseWallpaperParams('')).toEqual({ enabled: false, labels: true, zoom: null });
+    expect(parseWallpaperParams('')).toEqual({ enabled: false, ...DEFAULTS });
     expect(parseWallpaperParams('?token=abc&wallpaper=0')).toMatchObject({ enabled: false });
     // zoom only means something in wallpaper mode
     expect(parseWallpaperParams('?zoom=4').zoom).toBeNull();
@@ -24,19 +33,49 @@ describe('parseWallpaperParams', () => {
   it('reads wallpaper, labels and zoom alongside other params', () => {
     expect(parseWallpaperParams('?token=abc&wallpaper=1')).toEqual({
       enabled: true,
-      labels: true,
-      zoom: null,
+      ...DEFAULTS,
     });
     expect(parseWallpaperParams('?wallpaper=true&labels=0&zoom=5')).toEqual({
       enabled: true,
+      ...DEFAULTS,
       labels: false,
       zoom: 5,
     });
     expect(parseWallpaperParams('?wallpaper=1&labels=false').labels).toBe(false);
   });
 
-  it('clamps and rounds a forced zoom, ignores garbage', () => {
-    expect(parseWallpaperParams('?wallpaper=1&zoom=0').zoom).toBe(1);
+  it('reads chatter, bg, claudeSkin and vignette', () => {
+    expect(
+      parseWallpaperParams('?wallpaper=1&bg=102030&chatter=0&claudeSkin=classic&vignette=0'),
+    ).toEqual({
+      enabled: true,
+      ...DEFAULTS,
+      chatter: false,
+      bg: '102030',
+      claudeSkin: 'classic',
+      vignette: false,
+    });
+    expect(parseWallpaperParams('?wallpaper=1&chatter=1&vignette=true&claudeSkin=NEW')).toEqual({
+      enabled: true,
+      ...DEFAULTS,
+      claudeSkin: 'new',
+    });
+    // a leading # (URL-encoded) is accepted, case is normalized
+    expect(parseWallpaperParams('?wallpaper=1&bg=%23A0B0C0').bg).toBe('a0b0c0');
+  });
+
+  it('ignores garbage bg / claudeSkin values', () => {
+    for (const bg of ['12345', '1234567', 'zzzzzz', 'red', '', '%20']) {
+      expect(parseWallpaperParams(`?wallpaper=1&bg=${bg}`).bg).toBeNull();
+    }
+    expect(parseWallpaperParams('?wallpaper=1&claudeSkin=old').claudeSkin).toBeNull();
+    expect(parseWallpaperParams('?wallpaper=1&chatter=maybe').chatter).toBe(true);
+  });
+
+  it('clamps and rounds a forced zoom, ignores garbage; 0 means fit', () => {
+    expect(parseWallpaperParams('?wallpaper=1&zoom=0').zoom).toBeNull();
+    expect(parseWallpaperParams('?wallpaper=1&zoom=-2').zoom).toBeNull();
+    expect(parseWallpaperParams('?wallpaper=1&zoom=1').zoom).toBe(1);
     expect(parseWallpaperParams('?wallpaper=1&zoom=3.6').zoom).toBe(4);
     expect(parseWallpaperParams('?wallpaper=1&zoom=999').zoom).toBe(WALLPAPER_ZOOM_MAX);
     expect(parseWallpaperParams('?wallpaper=1&zoom=abc').zoom).toBeNull();

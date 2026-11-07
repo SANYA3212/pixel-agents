@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 
+import { getClaudeSkin, subscribeClaudeSkin } from '../claudeSkin.js';
 import {
   MUGSHOT_CROP_LEFT_COL,
   MUGSHOT_CROP_SIDE_PX,
@@ -37,6 +38,8 @@ export function CharacterMugShot({
   size = MUGSHOT_DISPLAY_PX,
 }: CharacterMugShotProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Re-draw when the Claude skin choice changes (getSpritesForLook reads it).
+  const claudeSkin = useSyncExternalStore(subscribeClaudeSkin, getClaudeSkin);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -65,7 +68,7 @@ export function CharacterMugShot({
       side,
       side,
     );
-  }, [palette, hueShift, providerId, skinHue]);
+  }, [palette, hueShift, providerId, skinHue, claudeSkin]);
 
   return (
     <canvas
